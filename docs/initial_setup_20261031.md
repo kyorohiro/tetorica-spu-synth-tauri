@@ -29,8 +29,9 @@ SPUの対応ソースとlicenseはdistの配布物へ含まれる。
 
 ## 次の確認
 
-- [ ] 実アプリでWeb Audio → Native → Web Audioを往復して、演奏とmonitorを確認する。
-- [ ] PinのOn／OffとReload、保存したpresetの読み戻しを実アプリで確認する。
+- [x] macOS実アプリでWeb Audio → Native → Web Audioを往復。PC鍵盤、離鍵、持続音とmonitorを確認。実聴は別途必要。
+- [x] PinのOn／OffとReload、保存したpresetの読み戻しをmacOS実アプリで確認。
+- [ ] Native出力の実聴と連続動作を確認。GUI試験中にunderrun／capture dropの増加を観測したため、音切れの有無と負荷条件を調べる。
 - [ ] VAB／PSFと長い音声の読み込み、PC鍵盤と上下Pitch／Morphを実アプリで確認する。
 - [x] 5環境のBuild Desktop成功を確認。macOS ARM64／Intel、Windows x86_64、Linux x86_64／ARM64。
 - [ ] Windows／Linuxの実機動作を確認する（CIの成功とは別）。
@@ -45,3 +46,6 @@ Gitの永続設定は変更していない。
 
 デバッグappは`src-tauri/target/debug/bundle/macos/Tetorica SPU Synth.app`。
 通常の起動は`npm run dev`、配布用ビルドは`npm run build`。
+
+追試で上記GUI操作を完了した。[実アプリ確認記録](desktop_gui_review_20261031.md)を参照。
+初回のtimeout記録は履歴として残している。
