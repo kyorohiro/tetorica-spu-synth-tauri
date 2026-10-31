@@ -32,6 +32,7 @@ SPUの対応ソースとlicenseはdistの配布物へ含まれる。
 - [x] macOS実アプリでWeb Audio → Native → Web Audioを往復。PC鍵盤、離鍵、持続音とmonitorを確認。実聴は別途必要。
 - [x] PinのOn／OffとReload、保存したpresetの読み戻しをmacOS実アプリで確認。
 - [ ] Native出力の実聴と連続動作を確認。GUI試験中にunderrun／capture dropの増加を観測したため、音切れの有無と負荷条件を調べる。
+  短いUI遅延への対策と診断を追加したが、約94msの送信停止と欠落が残る。[調査記録](native_audio_buffer_20261031.md)。
 - [ ] VAB／PSFと長い音声の読み込み、PC鍵盤と上下Pitch／Morphを実アプリで確認する。
 - [x] 5環境のBuild Desktop成功を確認。macOS ARM64／Intel、Windows x86_64、Linux x86_64／ARM64。
 - [ ] Windows／Linuxの実機動作を確認する（CIの成功とは別）。

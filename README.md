@@ -37,6 +37,7 @@ Native選択時は既定デバイスで開始します。別の機器はデバ�
 エラー時は演奏を止めてWeb Audio出力へ戻し、理由を表示します。
 SPUエンジン自体が終了した場合はEnable audioで再開します（新しいSineから開始）。
 出力デバイスとのサンプルレート変換・時計補正・送信量制限はFM2612 SynthのTauri版と共通です。
+SPU版の送信枠は8パケットで、48kHzでは約43ms分を蓄えて再生を開始します（上限約85ms）。
 WebViewの長い停止による欠音を完全に防ぐ構成ではありません。
 
 ## ブラウザ版を更新する
@@ -68,6 +69,14 @@ macOSのappは`src-tauri/target/release/bundle/macos/`に生成されます。
 
 ```sh
 cargo test --locked --manifest-path src-tauri/Cargo.toml native_device_smoke -- --ignored --nocapture
+```
+
+UI／IPCの25ms遅延を再現するオフライン試験と、30秒の実デバイス無音試験もあります。
+後者はCPAL側の確認であり、WebView IPCや音質の実聴は別途必要です。
+
+```sh
+node scripts/check-audio-transport.cjs /tmp/spu-audio-transport.json
+cargo test --locked --manifest-path src-tauri/Cargo.toml native_device_continuous -- --ignored --nocapture
 ```
 
 ActionsのBuild DesktopはmacOS ARM64／x86_64、Windows x86_64、Linux x86_64／ARM64を対象にします。

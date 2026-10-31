@@ -142,6 +142,7 @@
           }
           if (result.credits) current.tap.port.postMessage({type: 'credit', count: result.credits});
           const now = clockNow();
+          current.maxPollGapMs = Math.max(current.maxPollGapMs, now - current.pollTime);
           if (Number.isFinite(result.queuedFrames)) {
             current.tap.port.postMessage({type: 'clock', queuedFrames: result.queuedFrames,
               intervalSeconds: Math.max(0.001, Math.min(1, (now - current.pollTime) / 1000))});
@@ -149,7 +150,7 @@
           current.pollTime = now;
           if (now - current.lastStatsTime >= 1000) {
             current.tap.port.postMessage({type: 'stats'});
-            status.title = `Device buffer: ${result.queuedFrames ?? 0} frames; buffer underruns: ${result.underruns ?? 0}; capture drops: ${current.droppedFrames} frames.`;
+            status.title = `Device buffer: ${result.queuedFrames ?? 0} frames; buffer underruns: ${result.underruns ?? 0}; capture drops: ${current.droppedFrames} frames. Longest write gap: ${current.maxWriteGapMs.toFixed(1)} ms; write round trip: ${current.maxWriteRoundTripMs.toFixed(1)} ms; poll gap: ${current.maxPollGapMs.toFixed(1)} ms.`;
             current.lastStatsTime = now;
           }
         }
@@ -170,7 +171,8 @@
       if (closed) { void invoke('audio_stop', {session: info.session}).catch(() => {}); return; }
       const current = {id: info.session, context, output, tap: null, routed: false,
         failed: false, pending: 0, writes: Promise.resolve(), maxCredits: info.credits,
-        frames: info.frames, droppedFrames: 0, polling: false, pollTime: clockNow(), lastStatsTime: clockNow()};
+        frames: info.frames, droppedFrames: 0, polling: false, pollTime: clockNow(), lastStatsTime: clockNow(),
+        lastWriteTime: null, maxWriteGapMs: 0, maxWriteRoundTripMs: 0, maxPollGapMs: 0};
       session = current;
       current.stateChanged = () => {
         if (context.state === 'closed') void failed(current, new Error('SPU audio session closed. Enable audio to restart.'));
@@ -198,7 +200,11 @@
           current.pending++;
           current.writes = current.writes.then(async () => {
             if (closed || session !== current || current.failed) return;
+            const started = clockNow();
+            if (current.lastWriteTime !== null) current.maxWriteGapMs = Math.max(current.maxWriteGapMs, started - current.lastWriteTime);
+            current.lastWriteTime = started;
             await invoke('audio_write', packet, {headers: {'x-synth-audio-session': current.id}});
+            current.maxWriteRoundTripMs = Math.max(current.maxWriteRoundTripMs, clockNow() - started);
           }).catch(error => { void failed(current, error); }).finally(() => { current.pending--; });
         };
         tap.onprocessorerror = () => { void failed(current, new Error('Native audio capture stopped')); };

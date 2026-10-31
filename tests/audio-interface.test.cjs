@@ -139,6 +139,24 @@ test('PCM writes are raw binary with a session header and are serialised', async
   write.resolve(); await flush(); writes = ui.calls.filter(call => call.command === 'audio_write'); assert.equal(writes.length, 2);
 });
 
+test('native diagnostics retain delayed write and poll timing for each session', async () => {
+  const write = deferred(); let count = 0;
+  const ui = boot({override: {audio_write: () => ++count === 1 ? write.promise : null}});
+  await ui.choose('native');
+  const tap = ui.taps[0], packet = new ArrayBuffer(512 * 8);
+  tap.port.onmessage({data:packet}); await flush();
+  ui.advance(95); write.resolve(); await flush();
+  ui.advance(5); tap.port.onmessage({data:packet}); await flush();
+  ui.advance(1000); await ui.poll();
+  const title=ui.nodes.get('desktop-audio-status').title;
+  assert.match(title,/write gap: 100.0 ms/);
+  assert.match(title,/write round trip: 95.0 ms/);
+  assert.match(title,/poll gap: 1100.0 ms/);
+  await ui.choose('web'); await ui.choose('native');
+  ui.advance(1000); await ui.poll();
+  assert.match(ui.nodes.get('desktop-audio-status').title,/write gap: 0.0 ms/);
+});
+
 test('a stale write error cannot stop a replacement session or steal its credits', async () => {
   const write = deferred();
   const ui = boot({override: {audio_write: () => write.promise}});
@@ -199,10 +217,12 @@ test('malformed credit or PCM messages fail safely rather than filling an unboun
 test('dynamic device packet sizes retain one pending native poll without JavaScript timers', async () => {
   for (const [sampleRate, frames] of [[8000, 128], [16000, 256], [48000, 512],
     [96000, 1024], [192000, 2048], [384000, 4096]]) {
-    const ui = boot({override: {audio_start: () => ({session: 'session-1', frames, sampleRate, credits: 4})}});
+    const ui = boot({override: {audio_start: () => ({session: 'session-1', frames, sampleRate, credits: 8})}});
     await ui.choose('native');
     assert.equal(ui.pendingPolls.length, 1); assert.equal(ui.timers.size, 0);
     assert.equal(ui.taps[0].settings.processorOptions.frames, frames);
+    assert.equal(ui.taps[0].settings.processorOptions.maxCredits, 8);
+    assert.equal(ui.taps[0].sent[0].count, 8);
     await ui.choose('web');
   }
 });

@@ -20,6 +20,7 @@ class SynthDesktopAudioOutput extends AudioWorkletProcessor {
     this.offset = 0;
     this.credits = 0;
     this.active = true;
+    this.started = false;
     // Retain the fractional resampling phase and previous sample across render
     // quanta. In particular, Synth's 53,267 Hz clock is not a 48,000 Hz device.
     this.inputFrame = 0;
@@ -32,6 +33,7 @@ class SynthDesktopAudioOutput extends AudioWorkletProcessor {
       if (message?.type === 'credit' && this.active &&
           Number.isInteger(message.count) && message.count > 0) {
         this.credits = Math.min(this.maxCredits, this.credits + message.count);
+        this.started = true;
       } else if (message?.type === 'stop') {
         this.active = false;
         this.credits = 0;
@@ -56,6 +58,9 @@ class SynthDesktopAudioOutput extends AudioWorkletProcessor {
   process(inputs, outputs) {
     for (const output of outputs[0] ?? []) output.fill(0);
     if (!this.active) return false;
+    // The graph can render before the initial credit message arrives. No
+    // native stream audio was captured yet; this is not a transport drop.
+    if (!this.started) return true;
     const channels = inputs[0];
     if (!channels?.[0]) return true;
     const leftChannel = channels[0], rightChannel = channels[1] ?? leftChannel;

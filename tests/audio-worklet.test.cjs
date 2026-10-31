@@ -40,6 +40,15 @@ test('credits bound packet production and the Web Audio speaker tap is silent', 
   }
 });
 
+test('waiting for initial credits is not reported as lost native audio', () => {
+  const {send, render, stats, instance} = processor({}, 48000);
+  for(let index=0;index<20;index++)render(new Float32Array(128));
+  send({type:'stats'});assert.equal(stats[0].droppedFrames,0);
+  send({type:'credit',count:1});
+  for(let index=0;index<5;index++)render(new Float32Array(128));
+  assert.equal(instance.droppedFrames,128,'starvation after capture starts remains visible');
+});
+
 test('starvation discards stale audio and stop ignores delayed credits', () => {
   const {packets, stats, render, send} = processor({frames: 256}, 48000);
   const block = value => new Float32Array(128).fill(value);

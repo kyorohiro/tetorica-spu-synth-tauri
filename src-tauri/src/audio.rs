@@ -1,7 +1,7 @@
 //! Final WebAudio PCM -> native output. No Node process or listening socket.
 //!
 //! A dedicated service thread owns CPAL's platform stream. Binary Tauri IPC is
-//! bounded by four ~11ms packet credits. The audio callback only accesses atomics
+//! bounded by eight ~11ms packet credits. The audio callback only accesses atomics
 //! and preallocated storage; it never waits on IPC, allocates, or locks a mutex.
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -22,9 +22,11 @@ use tauri::{ipc::InvokeBody, ipc::Request, WebviewWindow};
 const PACKET_FRAMES: usize = 512;
 #[cfg(test)]
 const PACKET_BYTES: usize = PACKET_FRAMES * 2 * 4;
-const QUEUE_PACKETS: usize = 4;
+// Half-full start gives ~43ms at 48kHz for WebView/IPC scheduling jitter.
+// Eight credits still cap the entire pipeline at ~85ms of PCM at that rate.
+const QUEUE_PACKETS: usize = 8;
 #[cfg(test)]
-const PREFILL_FRAMES: usize = PACKET_FRAMES * 2;
+const PREFILL_FRAMES: usize = PACKET_FRAMES * QUEUE_PACKETS / 2;
 const MAX_PACKET_FRAMES: usize = 4096;
 const FADE_SECONDS: f32 = 0.003;
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -814,7 +816,10 @@ mod tests {
         assert_eq!(credits.replenish(512), 1);
         assert_eq!(credits.replenish(512), 0);
         assert_eq!(credits.replenish(1023), 0);
-        assert_eq!(credits.replenish(2048), 3);
+        assert_eq!(
+            credits.replenish((PACKET_FRAMES * QUEUE_PACKETS) as u64),
+            QUEUE_PACKETS - 1
+        );
         assert_eq!(credits.available, QUEUE_PACKETS);
     }
 
@@ -851,6 +856,17 @@ mod tests {
     #[test]
     #[ignore = "opens the system output device and briefly plays low-level audio"]
     fn native_device_smoke() {
+        check_native_device(Duration::from_millis(400), false);
+    }
+
+    /// Separate CPAL/service check; not a WebView IPC or listening test.
+    #[test]
+    #[ignore = "opens the system output device for 30 seconds of silence"]
+    fn native_device_continuous() {
+        check_native_device(Duration::from_secs(30), true);
+    }
+
+    fn check_native_device(duration: Duration, delayed_silence: bool) {
         let audio = Audio::default();
         let devices = audio
             .0
@@ -870,15 +886,30 @@ mod tests {
         let mut credits = started["credits"].as_u64().unwrap();
         let frames_per_packet = started["frames"].as_u64().unwrap() as usize;
         let mut frame_index = 0u64;
-        let until = std::time::Instant::now() + Duration::from_millis(400);
+        let started_at = std::time::Instant::now();
+        let until = started_at + duration;
+        let mut next_delay = started_at + Duration::from_secs(1);
+        let mut delay_count = 0;
+        let mut previous_write = started_at;
+        let mut longest_write_gap = Duration::ZERO;
+        let mut observed_underruns = 0;
         while std::time::Instant::now() < until {
+            if delayed_silence && std::time::Instant::now() >= next_delay {
+                std::thread::sleep(Duration::from_millis(25));
+                next_delay += Duration::from_secs(1);
+                delay_count += 1;
+            }
             for _ in 0..credits {
+                let now = std::time::Instant::now();
+                longest_write_gap = longest_write_gap.max(now - previous_write);
+                previous_write = now;
                 let bytes = (0..frames_per_packet)
                     .map(|_| {
                         let sample = ((frame_index as f64 * 440.0 / sample_rate
                             * std::f64::consts::TAU)
                             .sin()
-                            * 0.01) as f32;
+                            * if delayed_silence { 0.0 } else { 0.01 })
+                            as f32;
                         frame_index += 1;
                         let little_endian = sample.to_le_bytes();
                         [
@@ -908,6 +939,11 @@ mod tests {
                 .poll_credits(&session)
                 .expect("long poll native PCM");
             assert!(polled["error"].is_null(), "{polled}");
+            let underruns = polled["underruns"].as_u64().unwrap();
+            if underruns != observed_underruns {
+                println!("At {:?}: {polled}", started_at.elapsed());
+                observed_underruns = underruns;
+            }
             credits = polled["credits"].as_u64().unwrap();
         }
         // Stale cleanup must leave the current stream usable.
@@ -924,6 +960,15 @@ mod tests {
             })
             .unwrap();
         println!("Native output final status: {status}");
+        println!(
+            "Elapsed: {:?}; injected 25ms producer delays: {delay_count}",
+            started_at.elapsed()
+        );
+        println!("Longest producer write gap: {longest_write_gap:?}");
+        if delayed_silence {
+            assert!(delay_count >= 29);
+            assert!(status["consumedFrames"].as_u64().unwrap() > (sample_rate * 29.0) as u64);
+        }
         assert!(status["consumedFrames"].as_u64().unwrap() > PACKET_FRAMES as u64);
         assert_eq!(status["underruns"], 0);
         audio
@@ -995,9 +1040,11 @@ mod tests {
         let queue = Arc::new(PcmQueue::new(PACKET_FRAMES * QUEUE_PACKETS));
         let mut renderer = Renderer::new(queue.clone(), 48_000);
         let fade_frames = renderer.fade_frames;
-        queue.push(&vec![[0.5, -0.5]; PACKET_FRAMES]).unwrap();
+        queue
+            .push(&vec![[0.5, -0.5]; PREFILL_FRAMES - PACKET_FRAMES])
+            .unwrap();
         assert_eq!(renderer.next_frame(), [0.0; 2]);
-        assert_eq!(queue.queued(), PACKET_FRAMES);
+        assert_eq!(queue.queued(), PREFILL_FRAMES - PACKET_FRAMES);
         queue.push(&vec![[0.5, -0.5]; PACKET_FRAMES]).unwrap();
         let first = renderer.next_frame();
         assert_eq!(first, [0.5 / fade_frames as f32, -0.5 / fade_frames as f32]);
