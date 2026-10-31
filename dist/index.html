@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="PlayStation 1 SPU synthesizer / emulator">
+    <meta name="theme-color" content="#c9cdd1">
+    <title>Tetorica SPU Synth</title>
+    <link rel="icon" href="./synth-spu/icon.png" type="image/png" sizes="any">
+    <link rel="apple-touch-icon" href="./synth-spu/icon.png">
+    <link rel="stylesheet" href="./synth-spu/synth.css?v=spu-master-200-1">
+  </head>
+  <body>
+    <main>
+      <header class="masthead">
+        <a class="laboratory-link" href="https://kyorohiro.github.io/hello_ymfm_wasm/">Tetorica <span>Sound Laboratory</span></a>
+        <nav aria-label="Sound Laboratory">
+          <a href="https://kyorohiro.github.io/hello_ymfm_wasm/synth/">FM2612 Synth</a>
+          <a href="https://kyorohiro.github.io/hello_ymfm_wasm/playground/?mode=ps1">Playground</a>
+        </nav>
+      </header>
+
+      <article class="synth-shell" aria-labelledby="synthTitle">
+        <header class="synth-heading">
+          <div class="title-row">
+            <div class="product-identity">
+              <img class="product-icon" src="./synth-spu/icon.png" width="112" height="112" alt="" decoding="async">
+              <div class="product-copy">
+                <p class="eyebrow">SAMPLE · ENVELOPE · REVERB</p>
+                <h1 id="synthTitle">Tetorica <span class="product-name"><span class="brand-s">S</span><span class="brand-p">P</span><span class="brand-u">U</span> Synth</span></h1>
+                <p class="description">PlayStation 1 SPU synthesizer / emulator</p>
+              </div>
+            </div>
+            <span class="engine-badge">SPU <span>24 VOICES</span></span>
+          </div>
+          <div class="audio-toolbar">
+            <div class="transport-actions">
+              <button id="startAudio" class="primary" type="button">Enable audio</button>
+              <button id="stopAudio" type="button">Stop all sound</button>
+            </div>
+            <label class="master-control" for="masterVolume">
+              <span>Master</span>
+              <input id="masterVolume" type="range" min="0" max="2" step="0.01" value="0.7" aria-label="Master volume, 0 to 200 percent">
+              <output id="masterVolumeValue" for="masterVolume">70%</output>
+            </label>
+          </div>
+          <div id="synthDesktopTools" hidden>
+            <button id="synthPinButton" type="button" aria-label="Pin window on top" aria-pressed="false" hidden>Pin</button>
+            <button type="button" data-reset-offline-cache>Reload</button>
+            <div id="synthMenuAudio"></div>
+          </div>
+          <p id="audioStatus" class="audio-status" role="status" aria-live="polite">Enable audio, then play a note to get started.</p>
+        </header>
+
+        <section id="spuMonitor" class="spu-monitor" aria-label="Instrument display">
+          <div class="visual-mode-controls" role="group" aria-label="Audio visualization">
+            <button type="button" data-spu-visual-mode="envelope" aria-pressed="true">Envelope</button>
+            <button type="button" data-spu-visual-mode="waveform" aria-pressed="false">Waveform</button>
+            <button type="button" data-spu-visual-mode="spectrum" aria-pressed="false">Spectrum</button>
+          </div>
+          <p id="visualizerDescription">Live output envelope · Watch the sound’s level over time.</p>
+          <div class="monitor-body">
+            <div class="monitor-plot">
+              <div id="monitorEnvelopeMount"></div>
+              <canvas id="outputCanvas" width="900" height="240" role="img" aria-label="Live SPU audio visualization" hidden></canvas>
+            </div>
+            <label class="monitor-pitch" for="pitchBend" title="Pitch bend: ±2 semitones. Release to return to the original pitch.">
+              <span>Pitch</span>
+              <input id="pitchBend" type="range" min="-2" max="2" step="0.01" value="0" aria-label="Pitch bend, minus two to plus two semitones" orient="vertical">
+              <output id="pitchValue" for="pitchBend">0.00</output>
+            </label>
+            <label id="monitorMorph" class="monitor-pitch monitor-morph" for="morphAmount" title="Software morph: A at the bottom, B at the top. Enable Software morph in the PCM tab.">
+              <span>Morph</span>
+              <input id="morphAmount" data-morph-performance-amount type="range" min="0" max="1" step="0.01" value="0" aria-label="Software morph amount, A to B" orient="vertical" disabled>
+              <output data-morph-performance-output for="morphAmount">Off</output>
+            </label>
+          </div>
+        </section>
+
+        <section class="instrument-workspace" aria-label="Instrument editor">
+          <div class="instrument-tabs" role="tablist" aria-label="Instrument settings">
+            <button id="instrumentTab-pcm" type="button" role="tab" data-spu-editor-tab="pcm" aria-controls="instrumentPanel-pcm" aria-selected="true" tabindex="0">PCM</button>
+            <button id="instrumentTab-adsr" type="button" role="tab" data-spu-editor-tab="adsr" aria-controls="instrumentPanel-adsr" aria-selected="false" tabindex="-1">ADSR</button>
+            <button id="instrumentTab-fx" type="button" role="tab" data-spu-editor-tab="fx" aria-controls="instrumentPanel-fx" aria-selected="false" tabindex="-1">FX</button>
+            <button id="instrumentTab-audio" type="button" role="tab" data-spu-editor-tab="audio" aria-controls="instrumentPanel-audio" aria-selected="false" tabindex="-1">Audio</button>
+            <button id="instrumentTab-bank" type="button" role="tab" data-spu-editor-tab="bank" aria-controls="instrumentPanel-bank" aria-selected="false" tabindex="-1">PSF / VAB</button>
+          </div>
+          <div id="spuVoicePanel" class="chip-editor"></div>
+          <section id="instrumentPanel-audio" class="chip-section audio-panel" role="tabpanel" aria-labelledby="instrumentTab-audio" hidden>
+            <h3>Audio sample</h3>
+            <p class="subtext">Load a recording or sound file to play it as an instrument. Up to 32 MiB / 30 minutes. Long recordings use Software audio beyond the PS1 RAM limit, with SPU pitch, ADSR and effects. Loading audio replaces the PCM cycle.</p>
+            <div class="sample-actions">
+              <button id="loadAudio" type="button">Load audio…</button>
+              <input id="audioFileInput" class="file-input" type="file" accept="audio/*" aria-label="Choose an audio sample">
+              <span id="sampleName" class="sample-name">Built-in sine cycle</span>
+            </div>
+            <p id="sampleLoadStatus" class="subtext" role="status" aria-live="polite">Choose a file, then play the keyboard.</p>
+            <div class="sample-settings">
+              <label for="sampleRootNote">Root MIDI note <input id="sampleRootNote" type="number" min="0" max="127" step="1" value="60"></label>
+              <label class="check-control" for="sampleLoop"><input id="sampleLoop" type="checkbox"> Loop imported audio</label>
+            </div>
+            <p class="subtext">Choose looping before loading a file. The root note sets the sample’s original pitch.</p>
+          </section>
+          <section id="instrumentPanel-bank" class="chip-section audio-panel" role="tabpanel" aria-labelledby="instrumentTab-bank" hidden>
+            <h3>PS1 sound bank</h3>
+            <p class="subtext">Open a standard Sony VAB (version 6 or 7), matching VH + VB files, or a PSF1 / MiniPSF set with all its PSFLib files. Opening or extracting a bank keeps the current instrument.</p>
+            <div class="sample-actions">
+              <button id="loadVab" type="button">Open VAB / VH + VB…</button>
+              <input id="vabFileInput" class="file-input" type="file" accept=".vab,.vh,.vb" multiple aria-label="Choose a VAB or matching VH and VB files">
+              <button id="loadPsf" type="button">Open PSF set…</button>
+              <input id="psfFileInput" class="file-input" type="file" accept=".psf,.psf1,.minipsf,.minipsf1,.psflib,.psf1lib" multiple aria-label="Choose PSF and related PSFLib files together">
+              <button id="loadPsfFolder" type="button">Open PSF folder…</button>
+              <input id="psfFolderInput" class="file-input" type="file" multiple webkitdirectory aria-label="Choose a folder containing a PSF set">
+            </div>
+            <div class="sample-settings">
+              <label>PSF entry <select id="psfEntry" aria-label="PSF entry" disabled></select></label>
+              <button id="extractPsf" type="button" disabled>Extract VAB banks</button>
+            </div>
+            <div class="sample-settings">
+              <label>Sound bank <select id="vabBank" aria-label="Sound bank" disabled></select></label>
+            </div>
+            <div class="sample-settings">
+              <label>Tone <select id="vabTone" aria-label="VAB Tone" disabled></select></label>
+              <button id="loadVabTone" type="button" disabled>Load selected Tone</button>
+            </div>
+            <p id="vabStatus" class="subtext" role="status" aria-live="polite">No sound bank opened.</p>
+            <p class="subtext">For PSF, choose an entry and extract its banks, then select a bank and Tone. Unavailable Tones are disabled. Static extraction supports contiguous standard VAB banks; separate VH/VB layouts, custom or runtime-packed banks may not be found. PSF2 and song playback are not supported. Extract ZIP archives before selecting their files or folder.</p>
+            <p class="subtext">Imports the original ADPCM, loop, ADSR and tuning. One Tone plays across the keyboard; key zones, layers and driver vibrato/portamento are not applied. Volume and pan are approximations. Reverb send uses the current shared reverb settings. Loading a Tone stops notes and turns off PMON, Noise and Software morph.</p>
+          </section>
+        </section>
+
+        <section class="instrument-toolbar" aria-label="Instrument files">
+          <label class="instrument-name-control" for="instrumentName">Instrument name <input id="instrumentName" type="text" maxlength="80" value="Sine" autocomplete="off"></label>
+          <div class="preset-actions">
+            <button id="loadPreset" type="button">Load preset…</button>
+            <input id="presetFileInput" class="file-input" type="file" accept="application/json,.json" aria-label="Choose an SPU preset">
+            <button id="savePreset" type="button">Save preset…</button>
+            <button id="resetPreset" class="quiet-button" type="button">Reset instrument</button>
+          </div>
+        </section>
+
+        <section class="keyboard-section" aria-labelledby="keyboardHeading">
+          <div class="section-heading">
+            <h2 id="keyboardHeading">Keyboard</h2>
+            <p>Play this instrument with your computer keyboard or the keys below.</p>
+          </div>
+          <div class="keyboard-toolbar">
+            <div class="octave-control" role="group" aria-label="Keyboard octave">
+              <button id="octaveDown" type="button" aria-label="Lower keyboard by one octave">−</button>
+              <span>Octave <output id="octaveValue">4</output></span>
+              <button id="octaveUp" type="button" aria-label="Raise keyboard by one octave">+</button>
+            </div>
+            <label class="check-control" for="sustainToggle"><input id="sustainToggle" type="checkbox"> Sustain</label>
+            <button id="allNotesOff" class="quiet-button" type="button">Release notes</button>
+          </div>
+          <div id="keyboardFretboard"></div>
+          <div class="performance-keyboard">
+            <label class="monitor-pitch keyboard-wheel" for="keyboardPitchBend" title="Pitch bend: ±2 semitones. Release to return to the original pitch.">
+              <span>Pitch</span>
+              <input id="keyboardPitchBend" type="range" min="-2" max="2" step="0.01" value="0" aria-label="Keyboard pitch bend, minus two to plus two semitones" orient="vertical">
+              <output id="keyboardPitchValue" for="keyboardPitchBend">0.00</output>
+            </label>
+            <label class="monitor-pitch monitor-morph keyboard-wheel" for="keyboardMorphAmount" title="Software morph: A at the bottom, B at the top.">
+              <span>Morph</span>
+              <input id="keyboardMorphAmount" data-morph-performance-amount type="range" min="0" max="1" step="0.01" value="0" aria-label="Keyboard software morph amount, A to B" orient="vertical" disabled>
+              <output data-morph-performance-output for="keyboardMorphAmount">Off</output>
+            </label>
+            <div id="keyboardMount" class="keyboard-mount" aria-label="Playable keyboard"></div>
+          </div>
+          <p class="keyboard-hint"><output id="voiceAllocationStatus">24 voices · round robin</output>. Release notes follows the instrument’s release envelope. Stop all sound also clears held notes and reverb tails.</p>
+        </section>
+      </article>
+
+      <footer>
+        <p>112-sample wave drawing · PS1 ADPCM · Editable ADSR · SPU Noise · Pitch modulation · Shared SPU reverb</p>
+        <a href="https://github.com/kyorohiro/hello_ymfm_wasm">Source &amp; licenses</a>
+      </footer>
+      <noscript><p class="noscript-message">JavaScript is required to run Tetorica SPU Synth.</p></noscript>
+    </main>
+    <script type="module" src="./synth-spu/synth.js?v=spu-desktop-1"></script>
+  </body>
+</html>

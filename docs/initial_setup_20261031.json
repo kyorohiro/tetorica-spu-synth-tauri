@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-31",
+  "version": "0.1.0",
+  "frontend": {
+    "archive": "tetorica_spu_synth_tauri-initial-buttons-20261031_itch.zip",
+    "sha256": "013d1e13693efa29f8ba5672289919898d709c24803a12b3f3a1b94b116c3457",
+    "files": 46
+  },
+  "verification": {
+    "pythonTests": 6,
+    "nodeTests": 35,
+    "rustTests": 21,
+    "rustIgnored": 1,
+    "macosDebugAppBuild": true,
+    "gui": {
+      "launch": true,
+      "spuWasmReady": true,
+      "nativeOutputStartedHz": 48000,
+      "nativePresetSave": {
+        "schema": "tetorica-spu-synth.instrument",
+        "bytes": 7292,
+        "morphEnabled": true
+      },
+      "physicalListeningPerformed": false,
+      "pinAndReturnToWebAudio": "Automated UI observation timed out; do not count as GUI-verified. Offline adapter and pin confirmation tests passed."
+    },
+    "browserReview": {
+      "report": "browser_review_20261031.json",
+      "browsers": [
+        "chromium",
+        "webkit"
+      ],
+      "scope": "startup, keyboard Pitch/Morph, held edits, release, reset, rejected PMON with full sample RAM",
+      "passed": true
+    }
+  },
+  "unpublished": true,
+  "firstCommitCreated": false
+}
