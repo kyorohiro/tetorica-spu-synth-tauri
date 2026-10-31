@@ -17,6 +17,7 @@
         "width": 1280,
         "height": 900,
         "dragDropEnabled": false,
+        "backgroundThrottling": "disabled",
         "create": false
       }
     ],

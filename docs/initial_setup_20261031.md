@@ -33,6 +33,8 @@ SPUの対応ソースとlicenseはdistの配布物へ含まれる。
 - [x] PinのOn／OffとReload、保存したpresetの読み戻しをmacOS実アプリで確認。
 - [ ] Native出力の実聴と連続動作を確認。GUI試験中にunderrun／capture dropの増加を観測したため、音切れの有無と負荷条件を調べる。
   短いUI遅延への対策と診断を追加したが、約94msの送信停止と欠落が残る。[調査記録](native_audio_buffer_20261031.md)。
+  追試ではまとめ送り・背景停止抑制を追加。AI操作による背景移行の影響を分離できないため、
+  長時間GUI試験は保留。[実装・自動検証と再開条件](native_audio_batch_20261031.md)。
 - [x] macOS debug appで20MiB／109秒のWAV、デモVAB、合成PSFのVAB抽出・ToneロードとPC鍵盤／離鍵を確認。
 - [ ] 上下Pitch／Morphの操作、実ゲーム由来のbankや実際の音声ファイルをTauriで追加確認する。
 - [x] 5環境のBuild Desktop成功を確認。macOS ARM64／Intel、Windows x86_64、Linux x86_64／ARM64。

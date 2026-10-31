@@ -5,7 +5,7 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 const source = fs.readFileSync(path.join(__dirname, '../../desktop/audio-worklet.js'), 'utf8');
 
 function simulate({duration = 10, credits = 8, stallMs = 0, drift = 0,
-  burstFrames = 128, inputRate = 44100, deviceRate = 48000} = {}) {
+  burstFrames = 128, inputRate = 44100, deviceRate = 48000, replyMs = 1, batch = true} = {}) {
   let Processor, time = 0, queued = 0, consumed = 0, returned = 0, playing = false;
   let underruns = 0, sequence = 0, maxQueue = 0, packets = 0;
   const pending = [], frames = 512;
@@ -15,6 +15,19 @@ function simulate({duration = 10, credits = 8, stallMs = 0, drift = 0,
     return phase >= 1000 && phase < 1000 + stallMs ? t + 1000 + stallMs - phase : t;
   };
   const schedule = (t, fn) => pending.push({t, fn, sequence: sequence++});
+  let writing = false, awaitingWrites = 0, writeRequests = 0, largestBatch = 0;
+  function flushWrites() {
+    if (writing || !awaitingWrites) return;
+    writing = true;
+    const count = batch ? Math.min(credits, awaitingWrites) : 1;
+    awaitingWrites -= count; writeRequests++; largestBatch = Math.max(largestBatch, count);
+    const delivered = uiTime(time) + 1;
+    schedule(delivered, () => {
+      queued += frames * count; maxQueue = Math.max(maxQueue, queued);
+      if (queued > frames * credits) throw Error('Native queue overflow');
+    });
+    schedule(uiTime(delivered + replyMs), () => { writing = false; flushWrites(); });
+  }
   vm.runInNewContext(source, {
     sampleRate: inputRate, Float32Array, Number, Math, RangeError,
     AudioWorkletProcessor: class {
@@ -24,10 +37,7 @@ function simulate({duration = 10, credits = 8, stallMs = 0, drift = 0,
           if (packet.byteLength !== frames * 8) throw Error('Wrong PCM packet length');
           for (const sample of new Float32Array(packet)) if (!Number.isFinite(sample)) throw Error('Nonfinite PCM');
           packets++;
-          schedule(uiTime(time) + 1, () => {
-            queued += frames; maxQueue = Math.max(maxQueue, queued);
-            if (queued > frames * credits) throw Error('Native queue overflow');
-          });
+          schedule(uiTime(time), () => { awaitingWrites++; flushWrites(); });
         }};
       }
     },
@@ -65,7 +75,7 @@ function simulate({duration = 10, credits = 8, stallMs = 0, drift = 0,
     });
     nextPoll = uiTime(time + 4);
   }
-  return {credits, stallMs, drift, burstFrames, inputRate, deviceRate, duration,
+  return {credits, stallMs, drift, burstFrames, inputRate, deviceRate, duration, replyMs, batch, writeRequests, largestBatch,
     underruns, droppedFrames: processor.droppedFrames, queued, maxQueue, packets,
     correction: processor.step / processor.baseStep - 1};
 }

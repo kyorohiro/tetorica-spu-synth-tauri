@@ -139,18 +139,38 @@ test('PCM writes are raw binary with a session header and are serialised', async
   write.resolve(); await flush(); writes = ui.calls.filter(call => call.command === 'audio_write'); assert.equal(writes.length, 2);
 });
 
+test('an existing PCM backlog is batched in order without waiting to collect new audio', async () => {
+  const write=deferred(); let count=0;
+  const ui=boot({override:{audio_write:()=>++count===1?write.promise:null}});
+  await ui.choose('native'); const tap=ui.taps[0];
+  const packets=[.1,.2,.3,.4].map(value=>new Float32Array(512*2).fill(value).buffer);
+  tap.port.onmessage({data:packets[0]});
+  assert.equal(ui.calls.filter(call=>call.command==='audio_write').length,1,'first packet starts immediately');
+  for(const packet of packets.slice(1))tap.port.onmessage({data:packet});
+  await flush();assert.equal(count,1,'only one write may be in flight');
+  write.resolve();await flush();
+  const writes=ui.calls.filter(call=>call.command==='audio_write');assert.equal(writes.length,2);
+  assert.equal(writes[1].args.byteLength,512*8*3);
+  const bytes=new Uint8Array(writes[1].args);
+  packets.slice(1).forEach((packet,index)=>assert.deepEqual(bytes.slice(index*4096,(index+1)*4096),new Uint8Array(packet)));
+  ui.advance(1000);await ui.poll();
+  assert.match(ui.nodes.get('desktop-audio-status').title,/largest batch: 3 packets/);
+});
+
 test('native diagnostics retain delayed write and poll timing for each session', async () => {
   const write = deferred(); let count = 0;
   const ui = boot({override: {audio_write: () => ++count === 1 ? write.promise : null}});
   await ui.choose('native');
   const tap = ui.taps[0], packet = new ArrayBuffer(512 * 8);
   tap.port.onmessage({data:packet}); await flush();
-  ui.advance(95); write.resolve(); await flush();
+  ui.advance(95); write.resolve({rustMicros:500,serviceMicros:100}); await flush();
   ui.advance(5); tap.port.onmessage({data:packet}); await flush();
   ui.advance(1000); await ui.poll();
   const title=ui.nodes.get('desktop-audio-status').title;
   assert.match(title,/write gap: 100.0 ms/);
   assert.match(title,/write round trip: 95.0 ms/);
+  assert.match(title,/Rust write: 0.5 ms/);
+  assert.match(title,/service write: 0.1 ms/);
   assert.match(title,/poll gap: 1100.0 ms/);
   await ui.choose('web'); await ui.choose('native');
   ui.advance(1000); await ui.poll();
@@ -162,12 +182,15 @@ test('a stale write error cannot stop a replacement session or steal its credits
   const ui = boot({override: {audio_write: () => write.promise}});
   await ui.choose('native'); const oldTap = ui.taps[0];
   oldTap.port.onmessage({data: new ArrayBuffer(512 * 8)}); await flush();
+  oldTap.port.onmessage({data: new ArrayBuffer(512 * 8)});
+  oldTap.port.onmessage({data: new ArrayBuffer(512 * 8)});
   await ui.choose('web'); await ui.choose('native'); const currentTap = ui.taps[1];
   write.reject(new Error('old disconnected')); await ui.poll({credits: 4, error: 'old error'}, 'session-1');
   await ui.poll({credits: 2, error: null}, 'session-2');
   assert.equal(ui.nodes.get('desktop-audio-mode').value, 'native');
   assert.equal(ui.edges.has(currentTap), true); assert.equal(ui.edges.has(ui.destination), false);
   assert.equal(ui.calls.filter(call => call.command === 'audio_stop').length, 1);
+  assert.equal(ui.calls.filter(call => call.command === 'audio_write' && call.options.headers['x-synth-audio-session']==='session-1').length,1,'detached queued audio is never submitted');
   assert.deepEqual(currentTap.sent.filter(message => message.type === 'credit').map(message => message.count), [4, 2]);
 });
 

@@ -78,6 +78,8 @@
       if (session === current) session = null;
       current.tap?.port.postMessage({type: 'stop'});
       if (current.tap) current.tap.port.onmessage = null;
+      current.pending -= current.writeQueue.length;
+      current.writeQueue.length = 0;
       if (current.routed) {
         try { current.output.disconnect(current.tap); } catch {}
         try { current.tap.disconnect(); } catch {}
@@ -150,7 +152,7 @@
           current.pollTime = now;
           if (now - current.lastStatsTime >= 1000) {
             current.tap.port.postMessage({type: 'stats'});
-            status.title = `Device buffer: ${result.queuedFrames ?? 0} frames; buffer underruns: ${result.underruns ?? 0}; capture drops: ${current.droppedFrames} frames. Longest write gap: ${current.maxWriteGapMs.toFixed(1)} ms; write round trip: ${current.maxWriteRoundTripMs.toFixed(1)} ms; poll gap: ${current.maxPollGapMs.toFixed(1)} ms.`;
+            status.title = `Device buffer: ${result.queuedFrames ?? 0} frames; buffer underruns: ${result.underruns ?? 0}; capture drops: ${current.droppedFrames} frames. Longest write gap: ${current.maxWriteGapMs.toFixed(1)} ms; write round trip: ${current.maxWriteRoundTripMs.toFixed(1)} ms; Rust write: ${current.maxRustWriteMs.toFixed(1)} ms; service write: ${current.maxServiceWriteMs.toFixed(1)} ms; poll gap: ${current.maxPollGapMs.toFixed(1)} ms; largest batch: ${current.maxBatchPackets} packets.`;
             current.lastStatsTime = now;
           }
         }
@@ -170,9 +172,9 @@
       const info = await invoke('audio_start', {sampleRate: context.sampleRate, deviceId: device.value || null});
       if (closed) { void invoke('audio_stop', {session: info.session}).catch(() => {}); return; }
       const current = {id: info.session, context, output, tap: null, routed: false,
-        failed: false, pending: 0, writes: Promise.resolve(), maxCredits: info.credits,
+        failed: false, pending: 0, writeQueue: [], writing: false, maxBatchPackets: 0, maxCredits: info.credits,
         frames: info.frames, droppedFrames: 0, polling: false, pollTime: clockNow(), lastStatsTime: clockNow(),
-        lastWriteTime: null, maxWriteGapMs: 0, maxWriteRoundTripMs: 0, maxPollGapMs: 0};
+        lastWriteTime: null, maxWriteGapMs: 0, maxWriteRoundTripMs: 0, maxRustWriteMs: 0, maxServiceWriteMs: 0, maxPollGapMs: 0};
       session = current;
       current.stateChanged = () => {
         if (context.state === 'closed') void failed(current, new Error('SPU audio session closed. Enable audio to restart.'));
@@ -189,6 +191,34 @@
           processorOptions: {frames: info.frames, maxCredits: info.credits, outputSampleRate: info.sampleRate},
         });
         current.tap = tap;
+        async function flushWrites() {
+          if (current.writing || closed || session !== current || current.failed) return;
+          current.writing = true;
+          try {
+            while (!closed && session === current && !current.failed && current.writeQueue.length) {
+              // Start immediately; batch only an existing backlog. Keep one
+              // native write in flight so PCM order needs no reorder buffer.
+              const packets = current.writeQueue.splice(0, current.maxCredits);
+              let packet = packets[0];
+              if (packets.length > 1) {
+                const bytes = new Uint8Array(packets.length * info.frames * 8);
+                packets.forEach((value, index) => bytes.set(new Uint8Array(value), index * info.frames * 8));
+                packet = bytes.buffer;
+              }
+              current.maxBatchPackets = Math.max(current.maxBatchPackets, packets.length);
+              try {
+                const started = clockNow();
+                if (current.lastWriteTime !== null) current.maxWriteGapMs = Math.max(current.maxWriteGapMs, started - current.lastWriteTime);
+                current.lastWriteTime = started;
+                const timing = await invoke('audio_write', packet, {headers: {'x-synth-audio-session': current.id}});
+                current.maxWriteRoundTripMs = Math.max(current.maxWriteRoundTripMs, clockNow() - started);
+                if (Number.isFinite(timing?.rustMicros) && timing.rustMicros >= 0) current.maxRustWriteMs = Math.max(current.maxRustWriteMs, timing.rustMicros / 1000);
+                if (Number.isFinite(timing?.serviceMicros) && timing.serviceMicros >= 0) current.maxServiceWriteMs = Math.max(current.maxServiceWriteMs, timing.serviceMicros / 1000);
+              } finally { current.pending -= packets.length; }
+            }
+          } catch (error) { void failed(current, error); }
+          finally { current.writing = false; }
+        }
         tap.port.onmessage = event => {
           if (closed || session !== current || current.failed) return;
           if (event.data?.type === 'stats') { current.droppedFrames = event.data.droppedFrames; return; }
@@ -198,14 +228,8 @@
             void failed(current, new Error('Invalid or stalled native audio packet')); return;
           }
           current.pending++;
-          current.writes = current.writes.then(async () => {
-            if (closed || session !== current || current.failed) return;
-            const started = clockNow();
-            if (current.lastWriteTime !== null) current.maxWriteGapMs = Math.max(current.maxWriteGapMs, started - current.lastWriteTime);
-            current.lastWriteTime = started;
-            await invoke('audio_write', packet, {headers: {'x-synth-audio-session': current.id}});
-            current.maxWriteRoundTripMs = Math.max(current.maxWriteRoundTripMs, clockNow() - started);
-          }).catch(error => { void failed(current, error); }).finally(() => { current.pending--; });
+          current.writeQueue.push(packet);
+          void flushWrites();
         };
         tap.onprocessorerror = () => { void failed(current, new Error('Native audio capture stopped')); };
         await bridge.stopPlayback();

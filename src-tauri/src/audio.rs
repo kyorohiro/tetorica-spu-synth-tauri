@@ -203,6 +203,14 @@ impl Renderer {
     }
 }
 
+fn batch_packets(bytes: usize, packet_frames: usize) -> Result<usize, String> {
+    let packet_bytes = packet_frames * 8;
+    if bytes == 0 || bytes % packet_bytes != 0 || bytes / packet_bytes > QUEUE_PACKETS {
+        return Err("Expected one to eight complete native PCM packets".into());
+    }
+    Ok(bytes / packet_bytes)
+}
+
 fn decode_packet(bytes: &[u8], frames: usize) -> Result<Box<[[f32; 2]]>, String> {
     let expected_bytes = frames * 2 * 4;
     if bytes.len() != expected_bytes {
@@ -260,8 +268,8 @@ impl PacketCredits {
         }
     }
 
-    fn require_packet(&self) -> Result<(), String> {
-        if self.available == 0 {
+    fn require_packets(&self, count: usize) -> Result<(), String> {
+        if count == 0 || count > self.available {
             return Err("Native audio packet exceeded its credits".into());
         }
         Ok(())
@@ -314,11 +322,8 @@ impl Output {
 
     fn write(&mut self, session: &str, bytes: &[u8]) -> Result<(), String> {
         self.verify_session(session)?;
-        let frames = decode_packet(bytes, self.packet_frames)?;
-        self.credits.require_packet()?;
-        self.queue.push(&frames)?;
-        self.credits.available -= 1;
-        self.received_frames += frames.len() as u64;
+        self.received_frames +=
+            write_batch(&self.queue, &mut self.credits, bytes, self.packet_frames)? as u64;
         Ok(())
     }
 
@@ -342,6 +347,20 @@ impl Output {
             "sampleRate": self.sample_rate,
         }))
     }
+}
+
+fn write_batch(
+    queue: &PcmQueue,
+    credits: &mut PacketCredits,
+    bytes: &[u8],
+    packet_frames: usize,
+) -> Result<usize, String> {
+    let packets = batch_packets(bytes.len(), packet_frames)?;
+    credits.require_packets(packets)?;
+    let frames = decode_packet(bytes, packet_frames * packets)?;
+    queue.push(&frames)?;
+    credits.available -= packets;
+    Ok(frames.len())
 }
 
 fn build_stream<T: SizedSample + FromSample<f32>>(
@@ -626,9 +645,24 @@ impl Audio {
 
     async fn request(&self, operation: Operation) -> Result<Value, String> {
         let audio = self.clone();
-        tauri::async_runtime::spawn_blocking(move || audio.0.request(operation))
-            .await
-            .map_err(|error| error.to_string())?
+        let timed = matches!(&operation, Operation::Write { .. });
+        let entered = std::time::Instant::now();
+        let (result, service_elapsed) = tauri::async_runtime::spawn_blocking(move || {
+            let started = std::time::Instant::now();
+            let result = audio.0.request(operation);
+            (result, started.elapsed())
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+        let value = result?;
+        if timed {
+            // Durations, not cross-process timestamps. Includes the blocking
+            // pool wait in rustMicros, and service queue/write in serviceMicros.
+            Ok(json!({"rustMicros": entered.elapsed().as_micros() as u64,
+                "serviceMicros": service_elapsed.as_micros() as u64}))
+        } else {
+            Ok(value)
+        }
     }
 }
 
@@ -676,7 +710,7 @@ pub async fn audio_write(
     let InvokeBody::Raw(bytes) = request.body() else {
         return Err("Native audio requires a binary PCM packet".into());
     };
-    if bytes.is_empty() || bytes.len() > MAX_PACKET_FRAMES * 2 * 4 {
+    if bytes.is_empty() || bytes.len() > MAX_PACKET_FRAMES * QUEUE_PACKETS * 2 * 4 {
         return Err("Native audio packet is too large or empty".into());
     }
     state
@@ -713,6 +747,115 @@ pub async fn audio_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pcm_batches_preserve_stereo_order_and_charge_each_packet_once() {
+        let queue = PcmQueue::new(PACKET_FRAMES * QUEUE_PACKETS);
+        let mut credits = PacketCredits::new(PACKET_FRAMES);
+        let bytes = [0.25f32, 0.5, 0.75]
+            .into_iter()
+            .flat_map(|value| {
+                (0..PACKET_FRAMES)
+                    .flat_map(move |_| [value.to_le_bytes(), (-value).to_le_bytes()].concat())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            write_batch(&queue, &mut credits, &bytes, PACKET_FRAMES).unwrap(),
+            PACKET_FRAMES * 3
+        );
+        assert_eq!(credits.available, QUEUE_PACKETS - 3);
+        for value in [0.25, 0.5, 0.75] {
+            for _ in 0..PACKET_FRAMES {
+                assert_eq!(queue.pop(), Some([value, -value]));
+            }
+        }
+        assert_eq!(
+            credits.replenish(queue.consumed_frames.load(Ordering::Relaxed)),
+            3
+        );
+        assert_eq!(
+            credits.replenish(queue.consumed_frames.load(Ordering::Relaxed)),
+            0
+        );
+        assert_eq!(credits.available, QUEUE_PACKETS);
+    }
+
+    #[test]
+    fn invalid_or_unfunded_batches_leave_queue_and_credits_unchanged() {
+        let queue = PcmQueue::new(PACKET_FRAMES * QUEUE_PACKETS);
+        let mut credits = PacketCredits::new(PACKET_FRAMES);
+        for bytes in [
+            vec![],
+            vec![0; 8],
+            vec![0; PACKET_BYTES + 8],
+            vec![0; PACKET_BYTES * (QUEUE_PACKETS + 1)],
+        ] {
+            assert!(write_batch(&queue, &mut credits, &bytes, PACKET_FRAMES).is_err());
+            assert_eq!(queue.queued(), 0);
+            assert_eq!(credits.available, QUEUE_PACKETS);
+        }
+        let mut invalid = vec![0; PACKET_BYTES * 2];
+        invalid[PACKET_BYTES..PACKET_BYTES + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(write_batch(&queue, &mut credits, &invalid, PACKET_FRAMES).is_err());
+        assert_eq!(queue.queued(), 0);
+        assert_eq!(credits.available, QUEUE_PACKETS);
+        credits.available = 1;
+        assert!(write_batch(
+            &queue,
+            &mut credits,
+            &vec![0; PACKET_BYTES * 2],
+            PACKET_FRAMES
+        )
+        .is_err());
+        assert_eq!(queue.queued(), 0);
+        assert_eq!(credits.available, 1);
+    }
+
+    #[test]
+    fn write_ack_reports_native_duration_without_changing_other_results() {
+        let (send, receive) = mpsc::sync_channel::<Command>(16);
+        let audio = Audio(Arc::new(Service {
+            sender: Mutex::new(Some(send)),
+        }));
+        let owner = std::thread::spawn(move || {
+            while let Ok(command) = receive.recv() {
+                let result = match command.operation {
+                    Operation::Write { session, .. } if session == "ended" => {
+                        Err("session ended".into())
+                    }
+                    Operation::Write { .. } => {
+                        std::thread::sleep(Duration::from_millis(2));
+                        Ok(Value::Null)
+                    }
+                    Operation::Poll { .. } => Ok(json!({"credits": 2})),
+                    Operation::Shutdown => break,
+                    _ => panic!("unexpected test operation"),
+                };
+                command.reply.send(result).unwrap();
+            }
+        });
+        let ack = tauri::async_runtime::block_on(audio.request(Operation::Write {
+            session: "current".into(),
+            bytes: Box::new([]),
+        }))
+        .unwrap();
+        assert!(ack["serviceMicros"].as_u64().unwrap() >= 2000);
+        assert!(ack["rustMicros"].as_u64().unwrap() >= ack["serviceMicros"].as_u64().unwrap());
+        let polled = tauri::async_runtime::block_on(audio.request(Operation::Poll {
+            session: "current".into(),
+        }))
+        .unwrap();
+        assert_eq!(polled, json!({"credits": 2}));
+        assert!(
+            tauri::async_runtime::block_on(audio.request(Operation::Write {
+                session: "ended".into(),
+                bytes: Box::new([]),
+            }))
+            .is_err()
+        );
+        drop(audio);
+        owner.join().unwrap();
+    }
 
     #[test]
     fn long_poll_waits_on_native_time_until_credits_or_deadline() {
@@ -808,10 +951,10 @@ mod tests {
     fn credits_only_return_once_after_a_whole_packet_is_consumed() {
         let mut credits = PacketCredits::new(PACKET_FRAMES);
         for _ in 0..QUEUE_PACKETS {
-            credits.require_packet().unwrap();
+            credits.require_packets(1).unwrap();
             credits.available -= 1;
         }
-        assert!(credits.require_packet().is_err());
+        assert!(credits.require_packets(1).is_err());
         assert_eq!(credits.replenish(511), 0);
         assert_eq!(credits.replenish(512), 1);
         assert_eq!(credits.replenish(512), 0);
@@ -899,11 +1042,18 @@ mod tests {
                 next_delay += Duration::from_secs(1);
                 delay_count += 1;
             }
-            for _ in 0..credits {
+            let writes = if delayed_silence {
+                u64::from(credits > 0)
+            } else {
+                credits
+            };
+            for _ in 0..writes {
                 let now = std::time::Instant::now();
                 longest_write_gap = longest_write_gap.max(now - previous_write);
                 previous_write = now;
-                let bytes = (0..frames_per_packet)
+                let batch_frames =
+                    frames_per_packet * if delayed_silence { credits as usize } else { 1 };
+                let bytes = (0..batch_frames)
                     .map(|_| {
                         let sample = ((frame_index as f64 * 440.0 / sample_rate
                             * std::f64::consts::TAU)

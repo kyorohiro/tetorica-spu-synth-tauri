@@ -10,15 +10,17 @@ for (const inputRate of [44100, 53267]) for (const burstFrames of [128, 512]) {
   for (const count of [4, credits]) rows.push(simulate({credits: count, inputRate, burstFrames, stallMs: 25, duration: 30}));
 }
 for (const drift of [-.001, .001]) rows.push(simulate({credits, drift, duration: 60}));
-for (const row of rows.filter(row => row.credits === credits)) {
+for (const batch of [false,true]) rows.push(simulate({credits, replyMs:13, batch, duration:30}));
+for (const row of rows.filter(row => row.credits === credits && row.batch)) {
   assert.equal(row.underruns, 0, JSON.stringify(row)); assert.equal(row.droppedFrames, 0, JSON.stringify(row));
 }
 assert(rows.some(row => row.credits === 4 && row.underruns > 0 && row.droppedFrames > 0));
+assert(rows.some(row => !row.batch && row.replyMs === 13 && row.underruns > 0 && row.droppedFrames > 0));
 const files = ['desktop/audio-worklet.js', 'desktop/audio-interface.js', 'src-tauri/src/audio.rs',
   'tests/helpers/audio-transport.cjs', 'scripts/check-audio-transport.cjs'];
 const report = {schemaVersion: 1, passed: true, createdAt: new Date().toISOString(),
   scope: 'Offline scheduling model with actual desktop AudioWorklet; native queue and IPC scheduling are modeled.',
-  limitations: ['Not a WebView, CPAL, or listening test.', '25ms UI stalls every 2 seconds; 1ms IPC delivery; 4ms polling.',
+  limitations: ['Not a WebView, CPAL, or listening test.', '25ms UI stalls every 2 seconds; 1ms native delivery; 1ms or 13ms reply delay; 4ms polling.',
     '512-frame device callbacks; FIFO packets; fixed 48kHz device. Longer stalls may still lose audio.'],
   sources: Object.fromEntries(files.map(file => [file, createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')])), rows};
 if (process.argv[2]) fs.writeFileSync(path.resolve(process.argv[2]), JSON.stringify(report, null, 2) + '\n');

@@ -29,3 +29,13 @@ test('long UI stalls still discard bounded audio and recover rather than accumul
   assert(result.underruns > 0 && result.droppedFrames > 0);
   assert(result.queued > 0 && result.queued <= 512 * credits);
 });
+
+test('batching sustains device throughput when individual IPC acknowledgements take 13ms', () => {
+  const serial = simulate({credits, replyMs:13, batch:false});
+  assert(serial.underruns > 0 && serial.droppedFrames > 0, JSON.stringify(serial));
+  const batched = simulate({credits, replyMs:13, batch:true});
+  assert.equal(batched.underruns,0,JSON.stringify(batched));
+  assert.equal(batched.droppedFrames,0,JSON.stringify(batched));
+  assert(batched.largestBatch>1&&batched.largestBatch<=credits);
+  assert(batched.maxQueue<=512*credits);
+});
