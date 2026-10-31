@@ -30,7 +30,14 @@ Save a preset before Reload or quitting: unsaved instrument changes are not rest
   The bounded buffer improves short-stall tolerance but does not eliminate this issue. Use the default **Web Audio** output for this preview.
 - SPU synthesis runs in WASM / AudioWorklet in both output modes. Native selects the final device output; it does not replace synthesis with a native SPU engine.
 - PSF import extracts supported standard VAB banks; it does not play PSF songs. PSF2 and custom / runtime-packed banks are not supported.
-- Windows / Linux hardware testing, and desktop-specific VAB / PSF / long-audio workflows, remain to be checked. CI success is a build result, not a listening or installation test.
+- Windows / Linux hardware testing and broader real-world import workflows remain to be checked. CI success is a build result, not a listening or installation test.
 - No automatic update or automatic instrument recovery on restart.
 
 This is a **Preview / pre-release**, with the remaining checks tracked in the repository documentation.
+
+## Validation
+
+All five desktop CI builds passed for tag `v0.1.0` (commit `208d766`). Seven installers were generated.
+macOS debug-app smoke checks covered Menu / Pin, preset save / import, output switching,
+a 20 MiB / 109-second synthetic WAV, a demo VAB Tone, and VAB extraction from a synthetic PSF.
+Import and keyboard state checks do not replace physical listening or testing the downloaded installers.

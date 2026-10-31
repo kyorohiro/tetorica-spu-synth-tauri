@@ -1,0 +1,553 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-31",
+  "repository": "https://github.com/kyorohiro/tetorica-spu-synth-tauri",
+  "run": {
+    "conclusion": "success",
+    "created_at": "2026-10-31T05:17:57Z",
+    "event": "push",
+    "head_branch": "v0.1.0",
+    "head_sha": "208d76670d2422321ac631525a74e7633e7a23f0",
+    "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41172028117",
+    "id": 41172028117,
+    "status": "completed",
+    "updated_at": "2026-10-31T05:22:09Z"
+  },
+  "jobs": [
+    {
+      "completed_at": "2026-10-31T05:22:08Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41172028117/job/124451833460",
+      "id": 124451833460,
+      "name": "build (linux-arm64, ubuntu-24.04-arm, deb,appimage)",
+      "started_at": "2026-10-31T05:18:03Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@1.91.1"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install Linux dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm ci"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm test"
+        },
+        {
+          "conclusion": "success",
+          "name": "Test native PCM output"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify committed Synth assets"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Build desktop app"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and attach to draft release"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload installers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-10-31T05:21:55Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41172028117/job/124451833500",
+      "id": 124451833500,
+      "name": "build (macos-x86_64, macos-15-intel, dmg)",
+      "started_at": "2026-10-31T05:18:01Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@1.91.1"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Install Linux dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm ci"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm test"
+        },
+        {
+          "conclusion": "success",
+          "name": "Test native PCM output"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify committed Synth assets"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Build desktop app"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and attach to draft release"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload installers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-10-31T05:20:43Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41172028117/job/124451833505",
+      "id": 124451833505,
+      "name": "build (windows-x86_64, windows-latest, nsis)",
+      "started_at": "2026-10-31T05:18:01Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@1.91.1"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Install Linux dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm ci"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm test"
+        },
+        {
+          "conclusion": "success",
+          "name": "Test native PCM output"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify committed Synth assets"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Build desktop app"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and attach to draft release"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload installers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-10-31T05:21:17Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41172028117/job/124451833578",
+      "id": 124451833578,
+      "name": "build (linux-x86_64, ubuntu-24.04, deb,appimage)",
+      "started_at": "2026-10-31T05:18:00Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@1.91.1"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install Linux dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm ci"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm test"
+        },
+        {
+          "conclusion": "success",
+          "name": "Test native PCM output"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify committed Synth assets"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Build desktop app"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and attach to draft release"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload installers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-10-31T05:20:03Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41172028117/job/124451833594",
+      "id": 124451833594,
+      "name": "build (macos-arm64, macos-14, dmg)",
+      "started_at": "2026-10-31T05:18:01Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run dtolnay/rust-toolchain@1.91.1"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Install Linux dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm ci"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run npm test"
+        },
+        {
+          "conclusion": "success",
+          "name": "Test native PCM output"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify committed Synth assets"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Build desktop app"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and attach to draft release"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload installers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run Swatinem/rust-cache@v2"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    }
+  ],
+  "release": {
+    "assets": [
+      {
+        "browser_download_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/download/untagged-2f49e90135863f7d5a70/Tetorica.SPU.Synth_0.1.0_aarch64.AppImage",
+        "digest": "sha256:bab6e43daf36e01140061febcb3efcc5a569aa9a22543ca2652eeb02d788a810",
+        "id": 694454717,
+        "name": "Tetorica.SPU.Synth_0.1.0_aarch64.AppImage",
+        "size": 82852360,
+        "state": "uploaded"
+      },
+      {
+        "browser_download_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/download/untagged-2f49e90135863f7d5a70/Tetorica.SPU.Synth_0.1.0_aarch64.dmg",
+        "digest": "sha256:9e9714f5b45ee863f80663cce0a4d2e7363a52477199c539a014a03cf6e97d4b",
+        "id": 694450970,
+        "name": "Tetorica.SPU.Synth_0.1.0_aarch64.dmg",
+        "size": 14419174,
+        "state": "uploaded"
+      },
+      {
+        "browser_download_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/download/untagged-2f49e90135863f7d5a70/Tetorica.SPU.Synth_0.1.0_amd64.AppImage",
+        "digest": "sha256:6928924993359ca82faacce15001b143ccedc2e66fc781594478297b365dc522",
+        "id": 694453146,
+        "name": "Tetorica.SPU.Synth_0.1.0_amd64.AppImage",
+        "size": 84625912,
+        "state": "uploaded"
+      },
+      {
+        "browser_download_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/download/untagged-2f49e90135863f7d5a70/Tetorica.SPU.Synth_0.1.0_amd64.deb",
+        "digest": "sha256:79765460a782fe77fb6c827b670256d4e72c296cc965ee098e575990fa94ac2e",
+        "id": 694453121,
+        "name": "Tetorica.SPU.Synth_0.1.0_amd64.deb",
+        "size": 8992352,
+        "state": "uploaded"
+      },
+      {
+        "browser_download_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/download/untagged-2f49e90135863f7d5a70/Tetorica.SPU.Synth_0.1.0_arm64.deb",
+        "digest": "sha256:8e31a743fea6581a5f8a171199580608d846288951df255c64d1f3bdd175e5ff",
+        "id": 694454687,
+        "name": "Tetorica.SPU.Synth_0.1.0_arm64.deb",
+        "size": 8920994,
+        "state": "uploaded"
+      },
+      {
+        "browser_download_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/download/untagged-2f49e90135863f7d5a70/Tetorica.SPU.Synth_0.1.0_x64-setup.exe",
+        "digest": "sha256:61822c2ad5a0b312e47fb9f23c011f2fc5756003f898900cf38b28f19f0ae2c2",
+        "id": 694452211,
+        "name": "Tetorica.SPU.Synth_0.1.0_x64-setup.exe",
+        "size": 7770328,
+        "state": "uploaded"
+      },
+      {
+        "browser_download_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/download/untagged-2f49e90135863f7d5a70/Tetorica.SPU.Synth_0.1.0_x64.dmg",
+        "digest": "sha256:f603fc3cd7abb431ee526d4e72061afea937703bb14ccb26cccee52f4ebda95e",
+        "id": 694454357,
+        "name": "Tetorica.SPU.Synth_0.1.0_x64.dmg",
+        "size": 14473003,
+        "state": "uploaded"
+      }
+    ],
+    "draft": true,
+    "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/releases/tag/untagged-2f49e90135863f7d5a70",
+    "id": 429739837,
+    "name": "Tetorica SPU Synth v0.1.0 Preview",
+    "prerelease": true,
+    "tag_name": "v0.1.0",
+    "target_commitish": "208d76670d2422321ac631525a74e7633e7a23f0"
+  },
+  "verificationScope": "CI success and GitHub uploaded asset state/digests. Not installer download, installation or physical listening.",
+  "localMacDebugSmoke": {
+    "wave": {
+      "bytes": 20971564,
+      "frames": 5242880,
+      "sampleRate": 48000,
+      "seconds": 109.22666666666667,
+      "sha256": "63984d9d570009b65d8fbbf73c442232ee009a6cc792e4cae463897792074f4b",
+      "loaded": true
+    },
+    "vab": {
+      "fixture": "docs/playground/samples/spu-import/spu-synth-demo.vab",
+      "programs": 2,
+      "tones": 3,
+      "samples": 2,
+      "loadedTone": "P3 T0",
+      "adpcmBytes": 64
+    },
+    "psf": {
+      "fixture": "docs/playground/samples/spu-import/standalone.psf",
+      "extractedBanks": 2,
+      "loadedTone": "VAB @0x80010000 P3 T0",
+      "adpcmBytes": 64
+    },
+    "keyboardInputAndRelease": true,
+    "listeningPerformed": false,
+    "installerAppUsed": false
+  },
+  "remaining": [
+    "Native output long-stall gaps",
+    "installer launch / Windows and Linux hardware / physical listening",
+    "Tauri Pitch and Morph wheels; broader real-game / MiniPSF sets"
+  ]
+}

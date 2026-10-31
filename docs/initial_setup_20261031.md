@@ -33,7 +33,8 @@ SPUの対応ソースとlicenseはdistの配布物へ含まれる。
 - [x] PinのOn／OffとReload、保存したpresetの読み戻しをmacOS実アプリで確認。
 - [ ] Native出力の実聴と連続動作を確認。GUI試験中にunderrun／capture dropの増加を観測したため、音切れの有無と負荷条件を調べる。
   短いUI遅延への対策と診断を追加したが、約94msの送信停止と欠落が残る。[調査記録](native_audio_buffer_20261031.md)。
-- [ ] VAB／PSFと長い音声の読み込み、PC鍵盤と上下Pitch／Morphを実アプリで確認する。
+- [x] macOS debug appで20MiB／109秒のWAV、デモVAB、合成PSFのVAB抽出・ToneロードとPC鍵盤／離鍵を確認。
+- [ ] 上下Pitch／Morphの操作、実ゲーム由来のbankや実際の音声ファイルをTauriで追加確認する。
 - [x] 5環境のBuild Desktop成功を確認。macOS ARM64／Intel、Windows x86_64、Linux x86_64／ARM64。
 - [ ] Windows／Linuxの実機動作を確認する（CIの成功とは別）。
 - [x] first commitを作る。後続確認でローカル`46cc9ea`（`v0.0.0`）を確認。
@@ -50,3 +51,5 @@ Gitの永続設定は変更していない。
 
 追試で上記GUI操作を完了した。[実アプリ確認記録](desktop_gui_review_20261031.md)を参照。
 初回のtimeout記録は履歴として残している。
+
+v0.1.0の最新版5環境ビルドとDraft Release準備は[配布検証記録](release_0.1.0_verification.md)を参照。
