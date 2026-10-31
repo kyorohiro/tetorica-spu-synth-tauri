@@ -32,8 +32,16 @@
       ],
       "scope": "startup, keyboard Pitch/Morph, held edits, release, reset, rejected PMON with full sample RAM",
       "passed": true
+    },
+    "crossPlatformCI": {
+      "passed": true,
+      "jobs": 5,
+      "artifacts": 5,
+      "report": "ci_desktop_20261031.json",
+      "run": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41167689558"
     }
   },
   "unpublished": true,
-  "firstCommitCreated": false
+  "firstCommitCreated": true,
+  "pushedCommit": "46cc9ead3e7274cef6583bef4be4efccc17ab41b"
 }

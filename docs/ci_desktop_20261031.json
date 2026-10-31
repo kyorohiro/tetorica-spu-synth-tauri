@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-31",
+  "repository": "https://github.com/kyorohiro/tetorica-spu-synth-tauri",
+  "run": {
+    "conclusion": "success",
+    "created_at": "2026-10-31T04:13:47Z",
+    "head_sha": "46cc9ead3e7274cef6583bef4be4efccc17ab41b",
+    "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41167689558",
+    "id": 41167689558,
+    "status": "completed",
+    "updated_at": "2026-10-31T04:31:44Z"
+  },
+  "jobs": [
+    {
+      "completed_at": "2026-10-31T04:31:44Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41167689558/job/124438712910",
+      "id": 124438712910,
+      "name": "build (macos-x86_64, macos-15-intel, dmg)",
+      "started_at": "2026-10-31T04:13:53Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-31T04:19:27Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41167689558/job/124438713092",
+      "id": 124438713092,
+      "name": "build (windows-x86_64, windows-latest, nsis)",
+      "started_at": "2026-10-31T04:13:51Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-31T04:20:57Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41167689558/job/124438713140",
+      "id": 124438713140,
+      "name": "build (macos-arm64, macos-14, dmg)",
+      "started_at": "2026-10-31T04:13:53Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-31T04:19:48Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41167689558/job/124438713188",
+      "id": 124438713188,
+      "name": "build (linux-x86_64, ubuntu-24.04, deb,appimage)",
+      "started_at": "2026-10-31T04:13:51Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-10-31T04:21:23Z",
+      "conclusion": "success",
+      "html_url": "https://github.com/kyorohiro/tetorica-spu-synth-tauri/actions/runs/41167689558/job/124438713235",
+      "id": 124438713235,
+      "name": "build (linux-arm64, ubuntu-24.04-arm, deb,appimage)",
+      "started_at": "2026-10-31T04:13:54Z",
+      "status": "completed"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13030225429,
+      "name": "tetorica-spu-synth-windows-x86_64",
+      "size_in_bytes": 7750912,
+      "digest": "sha256:2c11ffbac9be3c7271b013c317c880584ec10e6f288508bdabaef81ab6f5a1a6",
+      "expired": false
+    },
+    {
+      "id": 13030116622,
+      "name": "tetorica-spu-synth-macos-x86_64",
+      "size_in_bytes": 14433425,
+      "digest": "sha256:8a934336e161fa58444f74bf1c6063481a81d92614bc3dbb69cd2233827c3f54",
+      "expired": false
+    },
+    {
+      "id": 13030035952,
+      "name": "tetorica-spu-synth-linux-arm64",
+      "size_in_bytes": 91135290,
+      "digest": "sha256:4f15d69da61b1bbca1b291511d16d7aa24d8f817ae82296baa17d26093aee280",
+      "expired": false
+    },
+    {
+      "id": 13029523196,
+      "name": "tetorica-spu-synth-linux-x86_64",
+      "size_in_bytes": 92980016,
+      "digest": "sha256:5320706a355a107fbc8a131d08e52795f3972307a6e168dc283f81d875f3c005",
+      "expired": false
+    },
+    {
+      "id": 13029433916,
+      "name": "tetorica-spu-synth-macos-arm64",
+      "size_in_bytes": 14379500,
+      "digest": "sha256:4bd9d8d9a979a43c5d6259994d730669a44439cc401a381022b74a9bd2253fb7",
+      "expired": false
+    }
+  ],
+  "verification": "GitHub reports all 5 jobs successful; 5 nonempty, unexpired artifacts with SHA-256 digests. Installers were not installed or listened to on Windows/Linux."
+}
