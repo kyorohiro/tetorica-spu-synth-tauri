@@ -46,6 +46,80 @@
       dialog.append(message, cancel, confirm); document.body.append(dialog); dialog.showModal(); cancel.focus();
     });
   }
+  // Use the FM2612 Synth's title toolbar, SVGs and menu interactions while
+  // retaining the SPU palette and the original, authenticated frontend assets.
+  function mountToolbar() {
+    const host = document.getElementById('synthDesktopTools');
+    if (!host || host.dataset.toolbarMounted) return;
+    const identity = document.querySelector('.product-identity');
+    const pin = document.getElementById('synthPinButton');
+    const audio = document.getElementById('synthMenuAudio');
+    const reload = host.querySelector('[data-reset-offline-cache]');
+    const load = document.getElementById('loadPreset'), save = document.getElementById('savePreset');
+    const presetInput = document.getElementById('presetFileInput');
+    if (!identity || !pin || !audio || !reload || !load || !save || !presetInput) return;
+    host.dataset.toolbarMounted = 'true';
+    const style = document.createElement('style');
+    style.textContent = `
+      .synth-title-group { display:flex; align-items:center; flex-wrap:wrap; gap:12px; flex:1; min-width:0; }
+      .synth-title-group .product-identity { flex:1 1 260px; }
+      #synthDesktopTools { display:flex; align-items:center; gap:6px; position:relative; flex-shrink:0; }
+      .synth-menu { position:relative; }
+      .synth-icon-button { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; min-height:36px; padding:0; border:1px solid #9ca7b0; border-radius:50%; background:#e0e3e6; color:#465a6c; cursor:pointer; list-style:none; box-shadow:none; }
+      .synth-icon-button::-webkit-details-marker { display:none; }
+      .synth-icon-button svg { width:19px; height:19px; }
+      .synth-icon-button:hover, .synth-icon-button.is-selected { background:#d6e5f5; border-color:var(--accent); color:var(--accent); }
+      .synth-icon-button.is-selected .pin-head { fill:var(--accent); }
+      .synth-icon-button:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+      .synth-menu-panel { position:absolute; top:calc(100% + 8px); left:0; z-index:30; width:min(320px, calc(100vw - 52px)); max-height:min(70vh, 520px); overflow-y:auto; box-sizing:border-box; padding:14px; border:1px solid #9ca7b0; border-radius:14px; background:#edf0f2; box-shadow:0 12px 32px #30353b50; }
+      .synth-menu-section + .synth-menu-section { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+      .synth-menu-section h2 { margin:0 0 8px; color:var(--muted); font-size:.72rem; }
+      .synth-menu-actions { display:grid; gap:6px; }
+      .synth-menu-actions .toolbar-button { text-align:left; padding:8px 10px; min-height:32px; }
+    `;
+    document.head.append(style);
+    const menu = document.createElement('details');
+    menu.id = 'synthMenu'; menu.className = 'synth-menu';
+    menu.innerHTML = `<summary id="synthMenuButton" class="synth-icon-button" aria-label="Menu" title="Menu" aria-expanded="false" aria-controls="synthMenuPanel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </summary><div id="synthMenuPanel" class="synth-menu-panel"></div>`;
+    pin.classList.add('synth-icon-button');
+    pin.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path class="pin-head" d="M9 3h6v5l3 5v2H6v-2l3-5z"/><path d="M12 15v7"/></svg>';
+    const panel = menu.querySelector('.synth-menu-panel');
+    function section(title, control, label) {
+      const section = document.createElement('section'); section.className = 'synth-menu-section synth-menu-actions';
+      if (title) { const heading = document.createElement('h2'); heading.textContent = title; section.append(heading); }
+      if (control) {
+        control.classList.add('toolbar-button'); control.dataset.closeSynthMenu = '';
+        if (label) control.textContent = label;
+        section.append(control);
+      }
+      panel.append(section); return section;
+    }
+    section('Import', load, 'Instrument · SPU preset…').append(presetInput);
+    section('Export', save, 'Instrument · SPU preset…');
+    audio.classList.add('synth-menu-section'); panel.append(audio);
+    section(null, reload);
+    host.replaceChildren(menu, pin);
+    const group = document.createElement('div'); group.className = 'synth-title-group';
+    identity.before(group); group.append(host, identity);
+
+    const button = document.getElementById('synthMenuButton');
+    const close = () => {menu.open = false; button.setAttribute('aria-expanded', 'false');};
+    menu.addEventListener('toggle', () => button.setAttribute('aria-expanded', String(menu.open)));
+    button.addEventListener('pointerdown', event => event.preventDefault());
+    button.addEventListener('keydown', event => {if ([' ', 'Enter'].includes(event.key)) event.stopPropagation();});
+    panel.addEventListener('pointerdown', event => {if (event.target.closest('button')) event.preventDefault();});
+    panel.addEventListener('click', event => {if (event.target.closest('[data-close-synth-menu]')) close();}, {capture:true});
+    panel.addEventListener('keydown', event => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End',' ','Enter'].includes(event.key)) event.stopPropagation();
+    });
+    document.addEventListener('pointerdown', event => {if (menu.open && !menu.contains(event.target)) close();});
+    window.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !menu.open) return;
+      event.preventDefault(); event.stopPropagation(); close(); button.focus();
+    }, {capture:true});
+  }
   const mountedReloadButtons = new WeakSet(), mountedPinButtons = new WeakSet();
   function mountPin() {
     const button = document.getElementById('synthPinButton');
@@ -79,6 +153,7 @@
       .finally(() => {busy = false; render();});
   }
   function mount() {
+    mountToolbar();
     mountPin();
     const button = document.querySelector('[data-reset-offline-cache]');
     if (!button || mountedReloadButtons.has(button)) return;
