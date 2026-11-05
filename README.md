@@ -57,10 +57,37 @@ npm run dev
 ```
 
 root `index.html`と`synth-spu/synth.js`を含むStandalone SPU SynthのZIPを指定します。
-`dist/`はZIPの内容を変更せず保持し、`release.lock.json`で全ファイルのSHA-256を照合します。
+取り込み直後の`dist/`はZIPの原本です。`release.lock.json`はその全ファイルのSHA-256を保持します。
 両方を同じコミットへ含めてください。元ZIPのGit登録は不要です。
 不正なZIPは取り込み前に拒否し、以前のdistとlockを保持します。
 Tauri用の保存・出力接続はローカル画面への追加scriptとして組み込みます。
+
+## ソースを編集・再利用する
+
+`dist/synth-spu/synth.js`がアプリの入口です。同じフォルダーの`spu_synth_panel.js`などのモジュールと、`dist/js/`の共有APIを直接編集できます。
+source-copy版では元のモジュールをそのまま実行し、編集後のbundle／minifyは不要です。以前のZIPがbundle済みの場合は、先にsource-copy版を取り込んでください。
+`dist/generated/*_wasm.js`はWASM用の生成loaderなので、コンパイラーが出力した短縮コードです。
+音源の元ソースとライセンスは同梱のsources／ライセンス案内を参照してください。
+
+```sh
+# dist/synth-spu/synth.js や関連モジュール、CSSを編集する
+npm run record:edits
+npm run dev
+# 追加編集後は、dev/buildの前にもう一度記録する
+npm run record:edits
+npm run build
+```
+
+`record:edits`は変更・追加ファイルのSHA-256と任意ファイルの削除を、
+取り込みZIPのSHA-256に紐づく **local-changes.json** へ記録します。
+`index.html`と`synth-spu/synth.js`は残してください。
+`release.lock.json`と元ソースのreceiptは変更しません。原本の記録と改造の記録を分けています。
+
+起動・ビルド時は原本と記録済み変更を合成して照合します。後から加えた未記録の変更、
+別ZIP用のmanifest、不正な相対パス、symlinkは拒否します。すべて原本へ戻して記録するとmanifestを削除します。
+改造版を共有するときは、編集した`dist/`と`local-changes.json`を一緒に保存してください。
+新しいZIPの取り込みに成功すると`dist/`を置き換えてmanifestを消すので、先に改造をcommitまたはコピーしてください。
+不正なZIPでは現在のファイルとmanifestを保持します。`desktop/`の接続コードも通常どおり編集できます。
 
 ## 検証・ビルド
 

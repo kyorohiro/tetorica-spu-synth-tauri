@@ -1,1 +1,397 @@
-var se=Object.defineProperty;var f=(n,e)=>se(n,"name",{value:e,configurable:!0});import we from"../generated/ps1_spu_wasm.js?v=spu-long-audio-1";function y(n,e,r,t){if(!Number.isSafeInteger(n)||n<e||n>r)throw new RangeError(`${t} must be an integer from ${e} to ${r}`);return n}f(y,"integer");function z(n){if(y(n,0,1022,"SPU register offset"),n&1)throw new RangeError("SPU register offsets must be 16-bit aligned");return n}f(z,"register");function K(n,e){y(n,0,524288,"SPU RAM address"),y(e,0,524288-n,"SPU RAM length")}f(K,"range");var C=class n{static{f(this,"Ps1Spu")}#t=0;constructor(e,r,t){this.module=e,this.handle=r,this.api=t,this.leftPtr=0,this.rightPtr=0,this.bufferFrames=0}static async create({moduleFactory:e,moduleOptions:r}){if(typeof e!="function")throw new TypeError("moduleFactory is required");let t=await e(r??{}),s={create:t.cwrap("ps1_spu_create","number",[]),destroy:t.cwrap("ps1_spu_destroy",null,["number"]),reset:t.cwrap("ps1_spu_reset","number",["number","number"]),rate:t.cwrap("ps1_spu_sample_rate","number",[]),write:t.cwrap("ps1_spu_write","number",["number","number","number"]),read:t.cwrap("ps1_spu_read","number",["number","number"]),load:t.cwrap("ps1_spu_load_ram","number",["number","number","number","number"]),readRam:t.cwrap("ps1_spu_read_ram","number",["number","number","number","number"]),render:t.cwrap("ps1_spu_render","number",["number","number","number","number"]),refreshEnvelope:typeof t._ps1_spu_refresh_envelope=="function"?t.cwrap("ps1_spu_refresh_envelope","number",["number","number"]):null,auditionKey:typeof t._ps1_spu_audition_key=="function"?t.cwrap("ps1_spu_audition_key","number",["number","number","number"]):null};if(s.rate()!==44100)throw new Error("Unexpected SPU native sample rate");let o=s.create();if(!o)throw new Error("SPU creation failed");return new n(t,o,s)}get sampleRate(){return 44100}get nativeFrames(){return this.#t}#e(){if(!this.handle)throw new Error("PS1 SPU is disposed")}reset(e={}){if(this.#e(),!e||typeof e!="object"||Array.isArray(e)||Reflect.ownKeys(e).some(t=>t!=="clearRam"))throw new TypeError("Invalid SPU reset options");let{clearRam:r=!1}=e;if(typeof r!="boolean")throw new TypeError("clearRam must be boolean");if(!this.api.reset(this.handle,Number(r)))throw new Error("SPU reset failed");this.#t=0}write(e,r){if(this.#e(),z(e),y(r,0,65535,"SPU register value"),!this.api.write(this.handle,e,r))throw new RangeError("Unsupported SPU register value or mode")}read(e){this.#e(),z(e);let r=this.api.read(this.handle,e)>>>0;if(r===4294967295)throw new RangeError("Unsupported SPU register read");return r}refreshEnvelope(e){if(this.#e(),y(e,0,23,"SPU voice"),!this.api.refreshEnvelope)throw new Error("This SPU build does not support live envelope editing");if(!this.api.refreshEnvelope(this.handle,e))throw new Error("SPU live envelope update failed")}auditionKey(e,r){if(this.#e(),y(e,0,23,"SPU voice"),typeof r!="boolean")throw new TypeError("SPU audition gate must be boolean");if(!this.api.auditionKey)throw new Error("This SPU build does not support smooth audition keys");if(!this.api.auditionKey(this.handle,e,Number(r)))throw new Error("SPU audition gate failed")}loadRam(e,r=0){if(this.#e(),!(e instanceof Uint8Array))throw new TypeError("SPU RAM data must be Uint8Array");if(K(r,e.length),!e.length)return;e.buffer===this.module.HEAPU8.buffer&&(e=e.slice());let t=this.module._malloc(e.length);if(!t)throw new Error("SPU RAM transfer allocation failed");try{if(this.module.HEAPU8.set(e,t),!this.api.load(this.handle,r,t,e.length))throw new Error("SPU RAM upload failed")}finally{this.module._free(t)}}readRam(e=0,r=524288-e){if(this.#e(),K(e,r),!r)return new Uint8Array;let t=this.module._malloc(r);if(!t)throw new Error("SPU RAM read allocation failed");try{if(!this.api.readRam(this.handle,e,t,r))throw new Error("SPU RAM read failed");return this.module.HEAPU8.slice(t,t+r)}finally{this.module._free(t)}}#r(e){if(e<=this.bufferFrames)return;let r=this.module._malloc(e*4);if(!r)throw new Error("SPU PCM allocation failed");let t=this.module._malloc(e*4);if(!t)throw this.module._free(r),new Error("SPU PCM allocation failed");this.leftPtr&&this.module._free(this.leftPtr),this.rightPtr&&this.module._free(this.rightPtr),this.leftPtr=r,this.rightPtr=t,this.bufferFrames=e}renderInto(e,r,t=e?.length,s=0){if(this.#e(),!(e instanceof Float32Array)||!(r instanceof Float32Array))throw new TypeError("SPU PCM outputs must be Float32Array");if(y(t,0,1048576,"SPU frame count"),y(s,0,Math.min(e.length,r.length),"SPU PCM offset"),t>Math.min(e.length,r.length)-s)throw new RangeError("SPU output buffers are too small");if(e.buffer===this.module.HEAPU8.buffer||r.buffer===this.module.HEAPU8.buffer)throw new TypeError("SPU output buffers must be owned outside WASM memory");if(t&&e.buffer===r.buffer&&Math.abs(e.byteOffset-r.byteOffset)<t*4)throw new RangeError("SPU output ranges must not overlap");if(!Number.isSafeInteger(this.#t+t))throw new RangeError("SPU native frame counter overflow");if(t){if(this.#r(t),!this.api.render(this.handle,this.leftPtr,this.rightPtr,t))throw new Error("SPU rendering failed");e.set(new Float32Array(this.module.HEAPU8.buffer,this.leftPtr,t),s),r.set(new Float32Array(this.module.HEAPU8.buffer,this.rightPtr,t),s),this.#t+=t}}generateStereo(e){this.#e(),y(e,0,1048576,"SPU frame count");let r=new Float32Array(e),t=new Float32Array(e);return this.renderInto(r,t,e),{left:r,right:t}}dispose(){this.leftPtr&&this.module._free(this.leftPtr),this.rightPtr&&this.module._free(this.rightPtr),this.handle&&this.api.destroy(this.handle),this.leftPtr=0,this.rightPtr=0,this.handle=0,this.bufferFrames=0}};function x(n){let e=n;if(typeof n=="string"){let r=/^([A-Ga-g])([#b]?)(-?\d+)$/.exec(n);if(!r)throw new RangeError("Expected a note name such as C4 or C#4");e=(Number(r[3])+1)*12+{C:0,D:2,E:4,F:5,G:7,A:9,B:11}[r[1].toUpperCase()]+(r[2]==="#"?1:r[2]==="b"?-1:0)}if(!Number.isInteger(e)||e<0||e>127)throw new RangeError("Note must be a name or integer MIDI 0..127");return 440*2**((e-69)/12)}f(x,"noteToHz");var I=f((n,e,r,t)=>{if(!Number.isSafeInteger(n)||n<e||n>r)throw new RangeError(`${t} must be an integer from ${e} to ${r}`);return n},"integer"),j=Object.freeze({attackRate:{word:"adsr1",shift:8,mask:127},attackExponential:{word:"adsr1",shift:15,boolean:!0},decayRate:{word:"adsr1",shift:4,mask:15},sustainLevel:{word:"adsr1",shift:0,mask:15},sustainRate:{word:"adsr2",shift:6,mask:127},sustainDecrease:{word:"adsr2",shift:14,boolean:!0},sustainExponential:{word:"adsr2",shift:15,boolean:!0},releaseRate:{word:"adsr2",shift:0,mask:31},releaseExponential:{word:"adsr2",shift:5,boolean:!0}});function F(n,e){return I(n,0,65535,"adsr1"),I(e,0,65535,"adsr2"),{attackRate:n>>8&127,attackExponential:!!(n&32768),decayRate:n>>4&15,sustainLevel:n&15,sustainRate:e>>6&127,sustainDecrease:!!(e&16384),sustainExponential:!!(e&32768),releaseRate:e&31,releaseExponential:!!(e&32)}}f(F,"decodePs1Envelope");function P(n,e,r){if(F(n,e),!r||typeof r!="object"||Array.isArray(r))throw new TypeError("PS1 envelope must be an object");let t={adsr1:n,adsr2:e};for(let s of Reflect.ownKeys(r)){if(typeof s!="string"||!Object.hasOwn(j,s))throw new TypeError("Unknown PS1 envelope parameter");let o=j[s],h=r[s];if(h===void 0)continue;if(o.boolean){if(typeof h!="boolean")throw new TypeError(`${s} must be boolean`)}else I(h,0,o.mask,s);let i=(o.boolean?1:o.mask)<<o.shift;t[o.word]=t[o.word]&~i|(o.boolean?Number(h):h)<<o.shift}return t}f(P,"patchPs1Envelope");var b=f((n,e,r)=>Object.freeze({id:n,name:e,registers:Object.freeze(r)}),"preset"),U=Object.freeze([b("off","Off",Array(32).fill(0)),b("room","Room",[125,91,28032,21688,48848,0,0,47744,22528,21248,1238,819,1008,551,884,495,820,437,0,0,0,0,0,0,0,0,436,310,184,92,32768,32768]),b("studio-small","Studio Small",[51,37,28912,20392,48352,17424,49392,39936,21120,20160,996,795,932,687,882,614,796,605,604,398,559,309,466,183,399,181,180,128,76,38,32768,32768]),b("studio-medium","Studio Medium",[177,127,28912,20392,48352,17680,48880,46272,21120,20160,2308,1899,2084,1631,1954,1558,1900,1517,1516,1070,1295,773,1122,695,1071,613,612,434,256,128,32768,32768]),b("studio-large","Studio Large",[227,169,28512,20392,48352,17680,48880,42624,22144,21184,3579,2904,3337,2620,3033,2419,2905,2266,2265,1513,2028,1200,1775,978,1514,797,796,568,340,170,32768,32768]),b("hall","Hall",[421,313,24576,20480,19456,47104,48128,49152,24576,23552,5562,4539,5314,4285,4540,3521,4544,3523,3520,2497,3012,1985,2560,1741,2498,1473,1472,1050,628,314,32768,32768]),b("space-echo","Space Echo",[829,561,32256,20480,46080,45056,19456,45056,24576,21504,7894,6705,7444,6203,7106,5810,6706,5615,5614,4181,4916,3885,4598,3165,4182,2785,2784,1954,1124,562,32768,32768]),b("half-echo","Half Echo",[23,19,28912,20392,48352,17680,48880,34048,24448,21696,881,687,741,479,688,471,856,618,470,286,301,177,287,89,416,227,88,64,40,20,32768,32768])]);var ne=24,_=4096,g=f((n,e,r,t)=>{if(!Number.isSafeInteger(n)||n<e||n>r)throw new RangeError(`${t} must be an integer from ${e} to ${r}`);return n},"integer"),w=f(n=>g(n,0,23,"channel"),"channel"),Y=f((n,e)=>{if(!Number.isFinite(n)||n<=0)throw new RangeError(`${e} must be positive finite Hz`);return n},"positive"),S=f((n,e)=>{if(!n||typeof n!="object"||Array.isArray(n))throw new TypeError(`${e} must be an object`)},"object"),oe=f(n=>{if(S(n,"PS1 envelope update options"),Reflect.ownKeys(n).some(e=>e!=="live")||n.live!==void 0&&typeof n.live!="boolean")throw new TypeError("Expected {live?:boolean}");return n.live!==!1},"liveEnvelopeOption"),ie=f(()=>({sample:null,volumeLeft:.75,volumeRight:.75,adsr1:15,adsr2:0,pitch:4096,reverb:!1}),"defaultVoice"),W=f(()=>({preset:"off",volumeLeft:.25,volumeRight:.25}),"defaultReverb"),$=f(n=>Math.round(n*16383)&32767,"volumeRegister");function V(n,e){if(S(e,"SPU ADPCM options"),Reflect.ownKeys(e).some(d=>!["rootNote","baseFrequencyHz","loopStartSamples"].includes(d)))throw new TypeError("Unknown SPU ADPCM option");let{rootNote:r,baseFrequencyHz:t,loopStartSamples:s}=e;if(r===void 0==(t===void 0))throw new TypeError("Supply exactly one rootNote or baseFrequencyHz for SPU ADPCM tuning");let o=r===void 0?Y(t,"baseFrequencyHz"):x(r);if(!(n instanceof ArrayBuffer)&&!ArrayBuffer.isView(n))throw new TypeError("SPU ADPCM data must be an ArrayBuffer or typed array");if(!n.byteLength||n.byteLength%16)throw new RangeError("SPU ADPCM requires complete 16-byte packets");if(n.byteLength>524288-_)throw new RangeError("SPU ADPCM exceeds available sample RAM");let h=n instanceof ArrayBuffer?new Uint8Array(n.slice(0)):new Uint8Array(n.buffer,n.byteOffset,n.byteLength).slice(),i=null,a=h.length/16,l=a*28;for(let d=0;d<a;d++){let m=h[d*16],u=h[d*16+1];if(m>>4>4||(m&15)>12)throw new RangeError("SPU ADPCM predictor must be 0..4 and shift 0..12");if(u&-8)throw new RangeError("Unsupported SPU ADPCM packet flags");if(!!(u&1)!=(d===a-1))throw new RangeError("SPU ADPCM requires END only on its final packet");if(u&4){if(i!==null)throw new RangeError("SPU ADPCM has multiple LOOP START markers");i=d*28}}let p=!!(h[h.length-15]&2);if(p&&s===void 0)throw new TypeError("Looped SPU ADPCM requires explicit loopStartSamples");if(!p&&(s!==void 0||i!==null))throw new TypeError("SPU ADPCM loop metadata requires LOOP on the END packet");let c=p?g(s,0,l-1,"loopStartSamples"):null;if(c!==null&&c%28)throw new RangeError("SPU ADPCM loopStartSamples must be on a 28-sample packet boundary");if(i!==null&&i!==c)throw new RangeError("SPU ADPCM LOOP START marker disagrees with loopStartSamples");return{adpcm:h,rootNote:r??null,rootFrequencyHz:o,basePitch:4096,loop:p,loopStartSamples:c,decodedFrames:l}}f(V,"preparePs1ADPCM");var O=class{static{f(this,"Ps1Synth")}constructor({core:e}){if(!e||!["reset","write","read","loadRam","readRam","renderInto","dispose"].every(r=>typeof e[r]=="function"))throw new TypeError("Ps1Synth requires Ps1Spu");this.core=e,this.sampleRate=44100,this.channelCount=ne,this.samples=[],this.sampleBytes=[],this.editorWaveforms=Array(24).fill(null),this.channels=[],this.gates=[],this.reverb=W(),this.nextAddress=_,this.disposed=!1,this.reset()}_open(){if(this.disposed)throw new Error("PS1 synth is disposed")}_enable(){this.core.write(384,16383),this.core.write(386,16383),this.core.write(426,49152)}reset(e={}){if(this._open(),S(e,"PS1 reset options"),Reflect.ownKeys(e).some(t=>t!=="clearRam"))throw new TypeError("Unknown PS1 reset option");let{clearRam:r=!1}=e;if(typeof r!="boolean")throw new TypeError("clearRam must be boolean");this.core.reset({clearRam:r}),r&&(this.samples=[],this.sampleBytes=[],this.editorWaveforms=Array(24).fill(null),this.nextAddress=_),this.channels=Array.from({length:24},ie),this.gates=Array(24).fill(!1),this.reverb=W(),this._enable();for(let t=0;t<24;t++)this._writeChannel(t,this.channels[t]);this._writeReverb(this.reverb)}loadADPCM(e,r){this._open();let t=V(e,r);if(this.nextAddress+t.adpcm.length>524288)throw new RangeError("PS1 sample RAM is full; reset with clearRam:true for a new bank");let s=this.nextAddress,o=s+(t.loopStartSamples??0)/28*16,h={id:this.samples.length,startAddress:s,repeatAddress:o,byteLength:t.adpcm.length,decodedFrames:t.decodedFrames,rootNote:t.rootNote,rootFrequencyHz:t.rootFrequencyHz,basePitch:t.basePitch,loop:t.loop,loopStartSamples:t.loopStartSamples};return this.core.loadRam(t.adpcm,s),this.samples.push(h),this.sampleBytes.push(t.adpcm),this.nextAddress+=t.adpcm.length,{...h}}_setWaveformPrepared(e,r){if(this._open(),w(e),S(r,"PS1 prepared waveform"),Reflect.ownKeys(r).some(h=>!["pcm","adpcm"].includes(h))||!Array.isArray(r.pcm)||r.pcm.length!==112)throw new RangeError("PS1 waveform requires exactly 112 PCM samples");for(let h of r.pcm)if(!Number.isFinite(h)||h<-1||h>1)throw new RangeError("PS1 waveform PCM must be finite and in [-1, 1]");if(!ArrayBuffer.isView(r.adpcm)||r.adpcm.byteLength!==64)throw new RangeError("PS1 waveform requires exactly 64 ADPCM bytes");let t=V(r.adpcm,{baseFrequencyHz:44100/112,loopStartSamples:0});if(t.adpcm.length!==64||t.adpcm[1]!==6||t.adpcm[17]!==0||t.adpcm[33]!==0||t.adpcm[49]!==3)throw new RangeError("PS1 waveform requires four looping ADPCM packets");let s=this.editorWaveforms[e],o=s?this.samples[s.sample]:null;if(o&&(o.editorChannel!==e||o.byteLength!==64))throw new Error("PS1 waveform slot is invalid");if(o)this.core.loadRam(t.adpcm,o.startAddress),this.sampleBytes[o.id]=t.adpcm;else{let h=this.loadADPCM(t.adpcm,{baseFrequencyHz:393.75,loopStartSamples:0});o=this.samples[h.id],o.editorChannel=e}return this.editorWaveforms[e]={sample:o.id,pcm:r.pcm.slice()},{...o}}_getResources(){return{samples:this.samples.map(e=>({...e})),nextAddress:this.nextAddress,waveforms:this.editorWaveforms.map(e=>e?{sample:e.sample,pcm:e.pcm.slice()}:null)}}_adoptResources(e){this.samples=e.samples.map(r=>({...r})),this.sampleBytes=[],this.nextAddress=e.nextAddress,this.editorWaveforms=(e.waveforms??Array(24).fill(null)).map(r=>r?{sample:r.sample,pcm:r.pcm.slice()}:null)}_preset(e,r){if(this._open(),w(e),S(r,"PS1 preset"),Reflect.ownKeys(r).some(s=>!["sample","volumeLeft","volumeRight","adsr1","adsr2","pitch","reverb"].includes(s)))throw new TypeError("Unknown PS1 preset parameter");let t={...this.channels[e]};if(r.sample!==void 0){let s=typeof r.sample=="object"?r.sample?.id:r.sample;t.sample=g(s,0,this.samples.length-1,"sample");let o=this.samples[t.sample].editorChannel;if(o!==void 0&&o!==e)throw new RangeError("PS1 editor waveform belongs to another channel")}for(let s of["volumeLeft","volumeRight"])if(r[s]!==void 0){let o=r[s];if(!Number.isFinite(o)||o<-1||o>1)throw new RangeError(`${s} must be finite from -1 to 1`);t[s]=o}for(let s of["adsr1","adsr2"])r[s]!==void 0&&(t[s]=g(r[s],0,65535,s));if(r.pitch!==void 0&&(t.pitch=g(r.pitch,0,16383,"pitch")),r.reverb!==void 0){if(typeof r.reverb!="boolean")throw new TypeError("reverb must be boolean");t.reverb=r.reverb}return t}_writeChannel(e,r){let t=e*16,s=this.samples[r.sample];for(let[o,h]of[[0,$(r.volumeLeft)],[2,$(r.volumeRight)],[4,r.pitch],[6,s?s.startAddress>>3:_>>3],[8,r.adsr1],[10,r.adsr2],[14,s?s.repeatAddress>>3:_>>3]])this.core.write(t+o,h);this._writeReverbSend(e,r.reverb)}_writeReverbSend(e,r){let t=408+(e>=16?2:0),s=1<<e%16,o=this.core.read(t);this.core.write(t,r?o|s:o&~s)}_reverb(e){if(this._open(),S(e,"PS1 reverb settings"),Reflect.ownKeys(e).some(t=>!["preset","volumeLeft","volumeRight"].includes(t)))throw new TypeError("Unknown PS1 reverb parameter");let r={...this.reverb};if(e.preset!==void 0){if(!U.some(t=>t.id===e.preset))throw new RangeError("Unsupported PS1 reverb preset");r.preset=e.preset}for(let t of["volumeLeft","volumeRight"])if(e[t]!==void 0){let s=e[t];if(!Number.isFinite(s)||s<0||s>1)throw new RangeError(`${t} must be finite from 0 to 1`);r[t]=s}return r}_writeReverb(e){let r=U.find(o=>o.id===e.preset);for(let o=0;o<32;o++)this.core.write(448+o*2,r.registers[o]);let t=e.preset!=="off";this.core.write(388,t?Math.round(e.volumeLeft*32767):0),this.core.write(390,t?Math.round(e.volumeRight*32767):0);let s=this.core.read(426);this.core.write(426,t?s|128:s&-129)}setPreset(e,r,t={}){let s=oe(t),o=this._preset(e,r),h=this.channels[e],i=r.adsr1!==void 0&&o.adsr1!==h.adsr1||r.adsr2!==void 0&&o.adsr2!==h.adsr2;this._writeChannel(e,o),this.channels[e]=o,s&&i&&this.core.refreshEnvelope?.(e)}setChannel(e,r,t={}){this.setPreset(e,r,t)}setEnvelope(e,r,t={}){this._open(),w(e);let s=this.channels[e];this.setPreset(e,P(s.adsr1,s.adsr2,r),t)}setReverb(e){let r=this._reverb(e);this._writeReverb(r),this.reverb=r}getPreset(e){return this._open(),w(e),{...this.channels[e]}}setPitch(e,r){this._open(),w(e),g(r,0,16383,"pitch"),this.core.write(e*16+4,r),this.channels[e].pitch=r}setFrequency(e,r){this._open(),w(e),Y(r,"frequency");let t=this.samples[this.channels[e].sample];if(!t)throw new Error("Assign an SPU ADPCM sample before setting musical pitch");if(t.editorChannel!==void 0&&t.editorChannel!==e)throw new Error("PS1 editor waveform belongs to another channel");let s=Math.round(t.basePitch*r/t.rootFrequencyHz);if(s<1||s>16383)throw new RangeError("Frequency is outside the PS1 SPU PITCH range");this.setPitch(e,s)}setNote(e,r){this.setFrequency(e,x(r))}keyOn(e){this._open(),w(e);let r=this.samples[this.channels[e].sample];if(!r)throw new Error("Assign an SPU ADPCM sample before keyOn");if(r.editorChannel!==void 0&&r.editorChannel!==e)throw new Error("PS1 editor waveform belongs to another channel");this._writeReverbSend(e,this.channels[e].reverb),this.core.write(392+(e>=16?2:0),1<<e%16),this.gates[e]=!0}keyOff(e){this._open(),w(e),this.core.write(396+(e>=16?2:0),1<<e%16),this.gates[e]=!1}_auditionKeyOn(e){this._open(),w(e);let r=this.samples[this.channels[e].sample];if(!r)throw new Error("Assign an SPU ADPCM sample before audition");if(r.editorChannel!==void 0&&r.editorChannel!==e)throw new Error("PS1 editor waveform belongs to another channel");this._writeReverbSend(e,this.channels[e].reverb),this.core.auditionKey(e,!0),this.gates[e]=!0}_auditionKeyOff(e){this._open(),w(e),this.core.auditionKey(e,!1),this.gates[e]=!1}_refreshEnvelope(e){this._open(),w(e),this.core.refreshEnvelope(e)}noteOn(e,r){r!==void 0&&this.setNote(e,r),this.keyOn(e)}noteOff(e){this.keyOff(e)}allNotesOff(){this._open(),this.core.write(396,65535),this.core.write(398,255),this.gates.fill(!1)}stopVoices(){this._open(),this.core.reset({clearRam:!1}),this.gates.fill(!1),this._enable();for(let e=0;e<24;e++)this._writeChannel(e,this.channels[e]);this._writeReverb(this.reverb)}getState(){return this._open(),{sampleRate:this.sampleRate,channelCount:this.channelCount,nextAddress:this.nextAddress,nativeFrames:this.core.nativeFrames??0,samples:this.samples.map(e=>({...e})),reverb:{...this.reverb},channels:this.channels.map((e,r)=>({...e,waveform:this.editorWaveforms[r]?.sample===e.sample?{sample:e.sample,pcm:this.editorWaveforms[r].pcm.slice()}:null,envelopeParameters:F(e.adsr1,e.adsr2),gate:this.gates[r],envelope:this.core.read(r*16+12),ended:!!(this.core.read(412+(r>=16?2:0))&1<<r%16)}))}}snapshot(){this._open();let e=new Uint16Array(512);for(let r=0;r<512;r++)e[r]=this.core.read(r*2);return{...this.getState(),ram:this.core.readRam(),registers:e}}renderInto(e,r,t=Math.min(e.length,r.length),s=0){this._open(),this.core.renderInto(e,r,t,s)}dispose(){this.disposed||(this.disposed=!0,this.core.dispose())}};var R=class{static{f(this,"Pcm44100Resampler")}constructor(e,r,{sourceFrames:t=128}={}){if(!e||typeof e.renderInto!="function")throw new TypeError("PCM resampler requires a stereo PCM source");if(e.sampleRate!==void 0&&e.sampleRate!==44100)throw new RangeError("PCM source rate must be 44100 Hz");if(!Number.isSafeInteger(r)||r<1||r>768e3)throw new RangeError("Invalid PCM output sample rate");if(!Number.isSafeInteger(t)||t<1||t>16384)throw new RangeError("Invalid PCM source block size");this.core=e,this.outputRate=r,this.sourceFrames=t,this.left=new Float32Array(t),this.right=new Float32Array(t),this.reset()}reset(e=this.core.nativeFrames??0){if(!Number.isSafeInteger(e)||e<0)throw new RangeError("Invalid PCM native frame position");this.offset=0,this.availableFrames=0,this.remainingPulls=0,this.primed=!1,this.phase=0,this.outputFrames=0,this.baseNativeFrames=e,this.renderedNativeFrames=e}_pull(){if(this.offset===this.availableFrames){let e=Math.min(this.sourceFrames,this.remainingPulls);this.core.renderInto(this.left,this.right,e),this.renderedNativeFrames+=e,this.availableFrames=e,this.offset=0}this.pulledLeft=this.left[this.offset],this.pulledRight=this.right[this.offset++],this.remainingPulls--}get playbackNativeFrames(){return this.baseNativeFrames+this.outputFrames*44100/this.outputRate}render(e,r,t=Math.min(e?.length??0,r?.length??0),s=0){if(!(e instanceof Float32Array)||!(r instanceof Float32Array))throw new TypeError("PCM output must be Float32Array");if(!Number.isSafeInteger(t)||t<0||!Number.isSafeInteger(s)||s<0||t>e.length-s||t>r.length-s)throw new RangeError("Invalid PCM output frame range");if(e.buffer===r.buffer&&t>0){let o=e.byteOffset+s*4,h=r.byteOffset+s*4;if(o<h+t*4&&h<o+t*4)throw new RangeError("PCM stereo destinations must not overlap")}if(t){if(this.outputRate===44100){this.core.renderInto(e,r,t,s),this.outputFrames+=t,this.renderedNativeFrames+=t;return}this.remainingPulls=(this.primed?0:2)+Math.floor((this.phase+t*44100)/this.outputRate),this.primed||(this._pull(),this.previousLeft=this.pulledLeft,this.previousRight=this.pulledRight,this._pull(),this.nextLeft=this.pulledLeft,this.nextRight=this.pulledRight,this.primed=!0);for(let o=s;o<s+t;o++){let h=this.phase/this.outputRate;for(e[o]=this.previousLeft+(this.nextLeft-this.previousLeft)*h,r[o]=this.previousRight+(this.nextRight-this.previousRight)*h,this.phase+=44100;this.phase>=this.outputRate;)this.phase-=this.outputRate,this.previousLeft=this.nextLeft,this.previousRight=this.nextRight,this._pull(),this.nextLeft=this.pulledLeft,this.nextRight=this.pulledRight}this.outputFrames+=t}}};var ae=4096,he=f((n,e,r,t)=>{if(!Number.isSafeInteger(n)||n<e||n>r)throw new RangeError(`${t} must be an integer from ${e} to ${r}`);return n},"integer");var le=f((n,e)=>{if(!Number.isFinite(n)||n<=0)throw new RangeError(`${e} must be positive finite Hz`);return n},"positive"),pe=f((n,e)=>{if(!n||typeof n!="object"||Array.isArray(n))throw new TypeError(`${e} must be an object`)},"object");function G(n,e){if(pe(e,"SPU ADPCM options"),Reflect.ownKeys(e).some(d=>!["rootNote","baseFrequencyHz","loopStartSamples"].includes(d)))throw new TypeError("Unknown SPU ADPCM option");let{rootNote:r,baseFrequencyHz:t,loopStartSamples:s}=e;if(r===void 0==(t===void 0))throw new TypeError("Supply exactly one rootNote or baseFrequencyHz for SPU ADPCM tuning");let o=r===void 0?le(t,"baseFrequencyHz"):x(r);if(!(n instanceof ArrayBuffer)&&!ArrayBuffer.isView(n))throw new TypeError("SPU ADPCM data must be an ArrayBuffer or typed array");if(!n.byteLength||n.byteLength%16)throw new RangeError("SPU ADPCM requires complete 16-byte packets");if(n.byteLength>524288-ae)throw new RangeError("SPU ADPCM exceeds available sample RAM");let h=n instanceof ArrayBuffer?new Uint8Array(n.slice(0)):new Uint8Array(n.buffer,n.byteOffset,n.byteLength).slice(),i=null,a=h.length/16,l=a*28;for(let d=0;d<a;d++){let m=h[d*16],u=h[d*16+1];if(m>>4>4||(m&15)>12)throw new RangeError("SPU ADPCM predictor must be 0..4 and shift 0..12");if(u&-8)throw new RangeError("Unsupported SPU ADPCM packet flags");if(!!(u&1)!=(d===a-1))throw new RangeError("SPU ADPCM requires END only on its final packet");if(u&4){if(i!==null)throw new RangeError("SPU ADPCM has multiple LOOP START markers");i=d*28}}let p=!!(h[h.length-15]&2);if(p&&s===void 0)throw new TypeError("Looped SPU ADPCM requires explicit loopStartSamples");if(!p&&(s!==void 0||i!==null))throw new TypeError("SPU ADPCM loop metadata requires LOOP on the END packet");let c=p?he(s,0,l-1,"loopStartSamples"):null;if(c!==null&&c%28)throw new RangeError("SPU ADPCM loopStartSamples must be on a 28-sample packet boundary");if(i!==null&&i!==c)throw new RangeError("SPU ADPCM LOOP START marker disagrees with loopStartSamples");return{adpcm:h,rootNote:r??null,rootFrequencyHz:o,basePitch:4096,loop:p,loopStartSamples:c,decodedFrames:l}}f(G,"preparePs1ADPCM");var M=f(n=>{if(!Number.isInteger(n)||n<0||n>23)throw new RangeError("PS1 SPU channel must be 0..23");return n},"channel");function E(n){if(typeof n!="string"||!n.length||n.length>128)throw new TypeError("Audition identity must contain 1..128 characters");return`voice-editor:${n}`}f(E,"identity");function fe(n={}){if(!n||typeof n!="object"||Array.isArray(n)||Reflect.ownKeys(n).some(e=>e!=="retrigger")||n.retrigger!==void 0&&typeof n.retrigger!="boolean")throw new TypeError("Expected {retrigger?:boolean}");return n.retrigger===!0}f(fe,"retriggerOption");function de(n={}){if(!n||typeof n!="object"||Array.isArray(n)||Reflect.ownKeys(n).some(e=>!["retrigger","live"].includes(e))||["retrigger","live"].some(e=>n[e]!==void 0&&typeof n[e]!="boolean"))throw new TypeError("Expected {live?:boolean,retrigger?:boolean}");return{live:n.live===!0,retrigger:n.retrigger===!0}}f(de,"envelopeOptions");var N=class{static{f(this,"Ps1VoiceInspector")}constructor(e,{sampleRate:r=44100,dispatch:t,beginAudition:s=f(()=>{},"beginAudition"),endAudition:o=f(()=>{},"endAudition"),onResourcesChanged:h=f(()=>{},"onResourcesChanged")}={}){this.synth=e,this.sampleRate=r,this.dispatch=t??(i=>e[i.method](...i.args??[])),this.beginAudition=s,this.endAudition=o,this.onResourcesChanged=h,this.auditions=new Map}resetAuditions(){for(let[e,r]of this.auditions)this.endAudition(e,E(r));this.auditions.clear()}read(){let e=this.synth.getState();return{...e,channels:e.channels.map((r,t)=>({...r,channel:t,active:r.gate,type:"spu-adpcm"})),kind:"ps1",sampleRate:this.sampleRate,nativeSampleRate:44100,auditions:[...this.auditions].map(([r,t])=>({channel:r,id:t}))}}invoke(e,r=[]){if(e==="loadTone"){let t=M(r[0]),s=G(r[1],r[2]),o=r[3];if(!o||typeof o!="object"||Array.isArray(o)||Reflect.ownKeys(o).some(a=>!["adsr1","adsr2","pitch","volumeLeft","volumeRight","reverb"].includes(a)))throw new TypeError("Expected an SPU Tone preset without a sample ID");this.synth._preset(t,o);let h=this.synth.samples.find(a=>a.editorChannel===void 0&&a.rootFrequencyHz===s.rootFrequencyHz&&a.loopStartSamples===s.loopStartSamples&&a.byteLength===s.adpcm.length&&this.synth.sampleBytes[a.id]?.every((l,p)=>l===s.adpcm[p]));h||(h=this.synth.loadADPCM(s.adpcm,r[2]),this.onResourcesChanged());let i=this.auditions.get(t);return i&&this.invoke("auditionOff",[t,i]),this.dispatch({method:"keyOff",args:[t]},void 0,{preserveOwner:!0}),this.dispatch({method:"setPreset",args:[t,{...o,sample:h.id}]},void 0,{preserveOwner:!0}),h}if(e==="auditionAllOff"){for(let[t,s]of[...this.auditions])this.invoke("auditionOff",[t,s]);return!0}if(e==="auditionOff"){let[t,s]=r;M(t);let o=E(s);if(this.auditions.get(t)!==s)return!1;try{this.dispatch({method:"_auditionKeyOff",args:[t]},o)}finally{this.auditions.delete(t),this.endAudition(t,o)}return!0}if(e==="auditionOn"){let[t,s,o]=r;if(M(t),!Number.isInteger(s)||s<0||s>127)throw new RangeError("MIDI note must be 0..127");let h=E(o),i=this.synth.getPreset(t),a=this.synth.samples[i.sample];if(!a)throw new Error("Assign a PS1 SPU ADPCM sample before using Keyboard");let l=Math.round(a.basePitch*x(s)/a.rootFrequencyHz);if(l<1||l>16383)throw new RangeError("Frequency is outside PS1 SPU PITCH range");return this.auditions.set(t,o),this.beginAudition(t,h),this.dispatch({method:"setPitch",args:[t,l]},h),this.dispatch({method:"_auditionKeyOn",args:[t]},h),!0}if(e==="setReverb"){this.synth._reverb(r[0]);let t=this.auditions.values().next().value;return this.dispatch({method:e,args:[{...r[0]}]},t?E(t):void 0,{preserveOwner:!0}),!0}if(e==="setWaveform"){let t=M(r[0]),s=fe(r[2]),o=this.synth._setWaveformPrepared(t,r[1]);this.onResourcesChanged();let h=this.auditions.get(t),i=h?E(h):void 0;return this.dispatch({method:"setPreset",args:[t,{sample:o.id}]},i,{preserveOwner:!0}),s&&h&&this.dispatch({method:"_auditionKeyOn",args:[t]},i),o}if(["setPreset","setChannel","setEnvelope","setPitch","setFrequency","setNote"].includes(e)){let t=M(r[0]),s=e==="setEnvelope"||(e==="setPreset"||e==="setChannel")&&["adsr1","adsr2"].some(p=>Object.hasOwn(r[1]??{},p)),o=["setPreset","setChannel","setEnvelope"].includes(e)?de(r[2]):{live:!1,retrigger:!1},h=!1;if(e==="setEnvelope"){let p=this.synth.getPreset(t),c=P(p.adsr1,p.adsr2,r[1]);h=c.adsr1!==p.adsr1||c.adsr2!==p.adsr2}else if(e==="setPreset"||e==="setChannel"){let p=this.synth.getPreset(t),c=this.synth._preset(t,r[1]);h=c.adsr1!==p.adsr1||c.adsr2!==p.adsr2}else{let p=this.synth.channels[t],c=this.synth.core.write;this.synth.channels[t]={...p},this.synth.core.write=()=>{};try{this.synth[e](...r)}finally{this.synth.core.write=c,this.synth.channels[t]=p}}let i=this.auditions.get(t),a=i?E(i):void 0,l=["setPreset","setChannel","setEnvelope"].includes(e)?{...r[1]}:r[1];return l&&typeof l=="object"&&l.sample&&typeof l.sample=="object"&&(l.sample=l.sample.id),this.dispatch({method:e,args:s?[t,l,{live:!1}]:[t,l]},a,{preserveOwner:!0}),s&&(o.live?h&&this.dispatch({method:"_refreshEnvelope",args:[t]},a,{preserveOwner:!0}):o.retrigger&&i&&this.dispatch({method:"_auditionKeyOn",args:[t]},a)),!0}throw new Error("Unsupported PS1 SPU inspector operation")}};var ce=Object.freeze(["sine","triangle","saw","square"]);function Z(n){if(!ce.includes(n))throw new TypeError("Unknown Morph waveform");return Array.from({length:112},(e,r)=>{let t=r/112;return Math.fround(.65*(n==="sine"?Math.sin(2*Math.PI*t):n==="triangle"?2/Math.PI*Math.asin(Math.sin(2*Math.PI*t)):n==="saw"?2*t-1:t<.5?1:-1))})}f(Z,"morphShape");var B=Object.freeze({enabled:!1,amount:0,a:Object.freeze(Z("sine")),b:Object.freeze(Z("saw"))});function A(n=B){if(!n||typeof n!="object"||Array.isArray(n)||Object.keys(n).some(r=>!Object.hasOwn(B,r)))throw new TypeError("Invalid Software morph settings");let e={...B,...n};if(typeof e.enabled!="boolean")throw new TypeError("Morph enabled must be boolean");if(!Number.isFinite(e.amount)||e.amount<0||e.amount>1)throw new RangeError("Morph amount must be from 0 to 1");for(let r of["a","b"]){let t=e[r];if(!Array.isArray(t)||t.length!==112||t.some(s=>!Number.isFinite(s)||s<-1||s>1))throw new TypeError("Morph endpoints require 112 PCM samples in [-1, 1]");e[r]=t.map(Math.fround)}return e}f(A,"readMorph");function J(n){let{a:e,b:r,amount:t}=A(n);return t===0?e:t===1?r:e.map((s,o)=>Math.fround(s+(r[o]-s)*t))}f(J,"morphPcm");var D=Object.freeze({enabled:!1,clock:48});function H(n=D){if(!n||typeof n!="object"||Array.isArray(n)||Object.keys(n).some(r=>!Object.hasOwn(D,r)))throw new TypeError("Invalid Noise settings");let e={...D,...n};if(typeof e.enabled!="boolean")throw new TypeError("Noise enabled must be boolean");if(!Number.isSafeInteger(e.clock)||e.clock<0||e.clock>63)throw new RangeError("Noise clock must be an integer from 0 to 63");return e}f(H,"readNoise");var q=Object.freeze({enabled:!1,ratio:1,depth:.5,decayMs:500,waveform:"sine"}),me=Object.freeze(["sine","triangle","saw","square"]);function k(n=q){if(!n||typeof n!="object"||Array.isArray(n)||Object.keys(n).some(r=>!Object.hasOwn(q,r)))throw new TypeError("Invalid Pitch Modulation settings");let e={...q,...n};if(!me.includes(e.waveform))throw new TypeError("Unknown PMON waveform");if(typeof e.enabled!="boolean")throw new TypeError("PMON enabled must be boolean");for(let[r,t,s]of[["ratio",.01,16],["depth",0,1],["decayMs",0,5e3]])if(!Number.isFinite(e[r])||e[r]<t||e[r]>s)throw new RangeError(`PMON ${r} must be from ${t} to ${s}`);return e}f(k,"readPmon");var Q=[13,15,19,23,27,31,37,46,53,62,74,93,110,120,150,190,210,250,300,370,420,500,590,740,850,990,1200,1500,1700,2e3,2400,3e3,3400,4e3,4800];function ee(n,e){k({decayMs:n});let r=127;return n>0&&(r=32+Q.reduce((t,s,o)=>Math.abs(s-n)<Math.abs(Q[t]-n)?o:t,0)),{adsr1:15,adsr2:16384|r<<6|e&63}}f(ee,"pmonAdsr");var v=class{static{f(this,"SpuRoundRobinVoices")}constructor(e=24){if(!Number.isSafeInteger(e)||e<1||e>24)throw new RangeError("Voice count must be 1\u201324");this.count=e,this.reset()}reset(){this.slots=Array(this.count).fill(null),this.notes=new Map,this.cursor=0,this.sequence=0}peek(){for(let e=0;e<this.count;e++){let r=(this.cursor+e)%this.count;if(this.slots[r]===null)return r}return this.slots.reduce((e,r)=>r.order<this.slots[e].order?r.channel:e,0)}allocate(e){if(typeof e!="string"||!e.length||e.length>128)throw new TypeError("Note identity must contain 1\u2013128 characters");if(this.notes.has(e))throw new Error("Note identity is already active");let r=this.peek(),t=this.slots[r];t&&this.notes.delete(t.id);let s={id:e,channel:r,order:++this.sequence};return this.slots[r]=s,this.notes.set(e,s),this.cursor=(r+1)%this.count,{channel:r,stolen:t?{...t}:null}}release(e){let r=this.notes.get(e);return!r||this.slots[r.channel]!==r?null:(this.notes.delete(e),this.slots[r.channel]=null,r.channel)}entries(){return this.slots.filter(Boolean).map(e=>({...e}))}};function te(n){if(!(n instanceof Int16Array)||!n.length||n.length>7938e4)throw new RangeError("Software audio requires 1 sample to 30 minutes of signed mono PCM");return n}f(te,"validateHostPcm");var ye=new Set(["auditionOn","auditionOff","auditionAllOff","setWaveform","setPreset","setChannel","setEnvelope","setReverb","setPitch","setFrequency","setNote"]),be=new Set(["loadADPCM","getPreset","snapshot","noteOn","noteOff","keyOn","keyOff","allNotesOff","_auditionKeyOn","_auditionKeyOff","_refreshEnvelope"]),re=new Set(["inspect","getState","getPreset","getInstrument","snapshot"]),L=class extends AudioWorkletProcessor{static{f(this,"SpuSynthProcessor")}constructor({processorOptions:e={}}={}){super(),this.dead=!1,this.synth=null,this.inspector=null,this.resampler=null,this.lastMidi=Array(24).fill(null),this.lastBend=Array(24).fill(null),this.instrumentBend=0,this.pmon=k(),this.noise=H(),this.morph=A({enabled:!0}),this.pmonSample=null,this.hostAudio=null,this.hostSlot=null,this.voices=new v,this.port.onmessage=({data:r})=>{if(r?.method==="dispose"){this.dispose();return}this.ready.then(()=>this.receive(r)).catch(()=>{})},this.ready=C.create({moduleFactory:we,moduleOptions:{wasmBinary:e.wasmBinary,locateFile:f(()=>"ps1_spu_wasm.wasm","locateFile")}}).then(r=>{if(this.dead){r.dispose();return}this.synth=new O({core:r});let t=r.module._ps1_spu_set_mix_headroom;if(typeof t!="function"||!t(r.handle,4))throw new Error("SPU precision mixer is unavailable");for(let s=0;s<24;s++){let o=this.synth._setWaveformPrepared(s,e.initialWaveform);this.synth.setPreset(s,{sample:o})}this.inspector=new N(this.synth,{sampleRate}),this.resampler=new R(this.synth,sampleRate),this.syncModulators(),this.port.postMessage({ready:!0,sampleRate,nativeSampleRate:44100,state:this.readState()})}).catch(r=>this.fail(r))}receive(e){let{id:r,method:t,args:s=[]}=e??{};try{if(this.dead||!this.synth)throw new Error("SPU synth is not ready");if(!Array.isArray(s))throw new TypeError("SPU command arguments must be an array");let o;if(t==="inspect"||t==="getState")o=this.readState();else if(t==="loadHostPCM"){let i=te(s[0]),a=s[1];if(!a||typeof a.loop!="boolean"||!Number.isFinite(a.baseFrequencyHz)||a.baseFrequencyHz<=0||a.baseFrequencyHz>1e6)throw new TypeError("Invalid software audio tuning");if(a.loop&&i.length<4)throw new RangeError("Software audio loops require at least 4 frames");let l=this.synth.core,p=l.module;if(typeof p._ps1_spu_set_host_pcm!="function"||typeof p._ps1_spu_set_host_mask!="function")throw new Error("Software audio is unavailable");if(!this.hostSlot){let m=new Uint8Array(16);m[0]=12,m[1]=1,this.hostSlot=this.synth.loadADPCM(m,{baseFrequencyHz:a.baseFrequencyHz})}let c=p._malloc(i.byteLength);if(!c)throw new Error("Not enough memory for this recording");try{if(p.HEAPU8.set(new Uint8Array(i.buffer,i.byteOffset,i.byteLength),c),this.stopInstrument(),!p._ps1_spu_set_host_pcm(l.handle,c,i.length,Number(a.loop)))throw new Error("Not enough memory for software audio")}finally{p._free(c)}let d=this.synth.samples[this.hostSlot.id];this.hostSlot=d,Object.assign(d,{rootFrequencyHz:a.baseFrequencyHz,basePitch:4096,loop:a.loop,loopStartSamples:a.loop?0:null,decodedFrames:i.length}),this.hostAudio={pcm:i,baseFrequencyHz:a.baseFrequencyHz,loop:a.loop};for(let m=0;m<24;m++)this.authorChannel(m,()=>this.inspector.invoke("setPreset",[m,{sample:d}]));this.morph={...this.morph,enabled:!1},o={frames:i.length,duration:i.length/44100}}else if(t==="instrumentNoteOn"){let[i,a,l=this.instrumentBend]=s;if(typeof a!="string"||!a.length||a.length>128)throw new TypeError("Audition identity must contain 1..128 characters");let p=this.carrierChannel(this.voices.peek());this.bentPitch(p,i,0);let c=this.bentPitch(p,i,l),d=this.voices.allocate(a);this.noise.enabled?(this.inspector.auditions.set(p,a),this.inspector.beginAudition(p,`voice-editor:${a}`),this.synth._auditionKeyOn(p)):this.inspector.invoke("auditionOn",[p,i,a]),this.synth.setPitch(p,c),this.pmon.enabled&&(this.configureModulator(p-1,i,l),this.synth.core.auditionKey(p-1,!0)),this.lastMidi[p]=i,this.lastBend[p]=l,o={channel:p,stolenId:d.stolen?.id??null}}else if(t==="instrumentNoteOff"){let i=this.voices.release(s[0]);o=i===null?!1:this.releaseInstrumentNote(this.carrierChannel(i),s[0])}else if(t==="instrumentAllNotesOff"){for(let i of this.voices.entries())this.releaseInstrumentNote(this.carrierChannel(i.channel),i.id);this.voices.reset(),o=!0}else if(t==="setInstrumentPmon"){let i=k(s[0]),a=s[1];if(a){if(!Array.isArray(a.pcm)||a.pcm.length!==112||a.pcm.some(p=>!Number.isFinite(p)||Math.abs(p)>1)||!ArrayBuffer.isView(a.adpcm)||a.adpcm.length!==64)throw new TypeError("Invalid PMON waveform packets");if(a.adpcm[1]!==6||a.adpcm[17]!==0||a.adpcm[33]!==0||a.adpcm[49]!==3)throw new TypeError("PMON waveform must be four looping ADPCM packets");if(!this.pmonSample&&this.synth.nextAddress+64>524288)throw new RangeError("No sample RAM available for PMON")}if(i.enabled&&(!this.pmonSample||!this.pmon.enabled)&&!a)throw new Error("Prepare the PMON waveform before enabling");if(i.enabled&&(i.depth!==this.pmon.depth||i.waveform!==this.pmon.waveform)&&this.pmonSample&&!a)throw new Error("Prepare the PMON waveform for a depth change");a&&(!this.pmonSample||i.depth!==this.pmon.depth||i.waveform!==this.pmon.waveform||i.enabled&&!this.pmon.enabled)&&(this.pmonSample?(this.synth.core.loadRam(a.adpcm,this.pmonSample.startAddress),this.synth.sampleBytes[this.pmonSample.id]=a.adpcm.slice()):this.pmonSample=this.synth.loadADPCM(a.adpcm,{baseFrequencyHz:44100/112,loopStartSamples:0}));let l=i.enabled!==this.pmon.enabled;l&&this.stopInstrument(),this.pmon=i,i.enabled&&(this.noise={...this.noise,enabled:!1}),l&&(this.voices=new v(i.enabled?12:24)),this.syncModulators(),o={...this.pmon}}else if(t==="setInstrumentNoise"){let i=H(s[0]),a=i.enabled!==this.noise.enabled;a&&this.stopInstrument(),this.noise=i,i.enabled&&(this.pmon={...this.pmon,enabled:!1}),a&&(this.voices=new v(24)),o={...this.noise}}else if(t==="auditionOn"){if(this.pmon.enabled||this.noise.enabled)throw new Error("Use instrumentNoteOn for PMON or Noise voices");let i=this.bentPitch(s[0],s[1],s[3]??this.instrumentBend);o=this.inspector.invoke(t,s.slice(0,3)),this.synth.setPitch(s[0],i),this.lastMidi[s[0]]=s[1],this.lastBend[s[0]]=s[3]??this.instrumentBend}else if(t==="setPitchBend"){let i=this.bentPitch(s[0],s[1],s[2]);o=this.inspector.invoke("setPitch",[s[0],i]),this.lastMidi[s[0]]!==null&&(this.lastMidi[s[0]]=s[1],this.lastBend[s[0]]=s[2])}else if(t==="setInstrumentPitchBend"){this.validateBend(s[0]);let i=this.activeNotes(),a=i.map((l,p)=>l===null?null:this.bentPitch(p,l,s[0]));for(let l=0;l<24;l++)a[l]!==null&&this.inspector.invoke("setPitch",[l,a[l]]);this.lastMidi=i,this.lastBend=i.map(l=>l===null?null:s[0]),this.instrumentBend=s[0],o=!0}else if(t==="setInstrumentEnvelope"||t==="setInstrumentPreset"){let[i,a={}]=s;this.validateInstrumentOptions(a);for(let l=0;l<24;l++)if(t==="setInstrumentPreset")this.synth._preset(l,i);else{let p=this.synth.getPreset(l);P(p.adsr1,p.adsr2,i)}for(let l=0;l<24;l++)this.authorChannel(l,()=>this.inspector.invoke(t==="setInstrumentPreset"?"setPreset":"setEnvelope",[l,i,a]));t==="setInstrumentPreset"&&i.sample!==void 0&&(this.morph={...this.morph,enabled:!1},this.hostAudio&&this.synth.getPreset(0).sample!==this.hostSlot.id&&this.clearHostAudio()),o=!0}else if(t==="setInstrumentWaveform"||t==="setInstrumentMorph"){let i=t==="setInstrumentMorph"?A(s[0]):null;if(i&&!i.enabled)this.morph=i,o={...this.morph};else{let[a,l={}]=i?[s[1],{retrigger:!1}]:s;if(i){let d=J(i);if(!a||!Array.isArray(a.pcm)||a.pcm.length!==112||d.some((m,u)=>m!==a.pcm[u]))throw new TypeError("Prepare matching Software morph waveform packets")}this.validateInstrumentOptions(l,!0);for(let d=0;d<24;d++){let m=this.synth.editorWaveforms[d],u=m&&this.synth.samples[m.sample];if(!u||u.editorChannel!==d||u.byteLength!==64)throw new Error("SPU instrument waveform slot is invalid")}this.hostAudio&&(this.stopInstrument(),this.clearHostAudio());let p=this.activeNotes(),c=p.map((d,m)=>d===null?null:this.noise.enabled?4096:this.pitchForSample(this.synth.samples[this.synth.editorWaveforms[m].sample],d,this.lastBend[m]??this.instrumentBend));for(let d=0;d<24;d++){let m=this.authorChannel(d,()=>this.inspector.invoke("setWaveform",[d,a,l]));d===0&&(o=m)}for(let d=0;d<24;d++)c[d]!==null&&this.inspector.invoke("setPitch",[d,c[d]]);this.lastMidi=p;for(let d=0;d<24;d++)p[d]===null&&(this.lastBend[d]=null);this.morph=i??{...this.morph,enabled:!1},i&&(o={...this.morph})}}else if(t==="setInstrumentReverbPreset"){let i=s[0];if(this.synth._reverb(i),typeof i.preset!="string")throw new TypeError("Choose an SPU reverb preset");let a=i.preset!=="off";this.inspector.invoke("setReverb",[i]);for(let l=0;l<24;l++)this.authorChannel(l,()=>this.inspector.invoke("setPreset",[l,{reverb:a}]));o=!0}else if(t==="getInstrument"){let i=this.synth.getPreset(s[0]),a=this.synth.samples[i.sample];if(!a)throw new Error("Assign an SPU sample before saving an instrument");let l=this.hostAudio&&a.id===this.hostSlot.id?{...this.hostAudio}:{adpcm:this.synth.sampleBytes[a.id].slice(),baseFrequencyHz:a.rootFrequencyHz};a.loop&&!l.pcm&&(l.loopStartSamples=a.loopStartSamples);let p=this.synth.editorWaveforms[s[0]];o={preset:i,sample:l,pmon:{...this.pmon},noise:{...this.noise},morph:A(this.morph),reverb:{...this.synth.reverb},waveform:p?.sample===a.id?p.pcm.slice():null}}else if(t==="stop"||t==="stopVoices")this.stopInstrument(),o=!0;else if(ye.has(t))o=this.inspector.invoke(t,s);else if(be.has(t))o=this.synth[t](...s);else throw new Error(`Unknown SPU synth command: ${t}`);re.has(t)||this.syncModulators();let h={id:r,value:o};re.has(t)||(h.state=this.readState()),this.port.postMessage(h)}catch(o){this.port.postMessage({id:r,error:String(o?.message??o),name:o?.name??"Error"})}}clearHostAudio(){let e=this.synth.core;e.module._ps1_spu_set_host_mask(e.handle,0),e.module._ps1_spu_set_host_pcm(e.handle,0,0,0),this.hostAudio=null}readState(){return{...this.inspector.read(),hostAudio:this.hostAudio?{frames:this.hostAudio.pcm.length,duration:this.hostAudio.pcm.length/44100,loop:this.hostAudio.loop}:null,pmon:{...this.pmon},noise:{...this.noise},morph:A(this.morph),pmonSampleReserved:!!this.pmonSample,polyphony:this.pmon.enabled?12:24}}carrierChannel(e){return this.pmon.enabled?e*2+1:e}authorChannel(e,r){if(!this.pmon.enabled||e%2)return r();let t=this.synth.core,s=t.write,o=t.refreshEnvelope;t.write=()=>{},t.refreshEnvelope=()=>{};try{return r()}finally{t.write=s,t.refreshEnvelope=o}}configureModulator(e,r,t){let s=this.synth.core,o=this.pmonSample,{adsr1:h,adsr2:i}=ee(this.pmon.decayMs,this.synth.getPreset(e+1).adsr2),a=r===null?0:Math.max(1,Math.min(16383,Math.round(4096*440*2**((r-69+t)/12)*this.pmon.ratio/(44100/112))));for(let[l,p]of[[0,0],[2,0],[4,a],[6,o.startAddress>>3],[8,h],[10,i],[14,o.repeatAddress>>3]])s.write(e*16+l,p)}syncModulators(){let e=this.synth.core,r=0;if(this.hostAudio&&!this.noise.enabled)for(let t=0;t<24;t++)(!this.pmon.enabled||t%2)&&this.synth.getPreset(t).sample===this.hostSlot.id&&(r|=1<<t);if(e.module._ps1_spu_set_host_mask?.(e.handle,r),e.write(404,this.noise.enabled?65535:0),e.write(406,this.noise.enabled?255:0),e.write(426,e.read(426)&-16129|(this.noise.enabled?this.noise.clock:0)<<8),this.noise.enabled){e.write(400,0),e.write(402,0);for(let t=0;t<24;t++){let s=this.synth.samples[this.synth.editorWaveforms[t].sample];e.write(t*16+6,s.startAddress>>3),e.write(t*16+14,s.repeatAddress>>3),e.write(t*16+4,4096)}}if(this.pmon.enabled){this.synth.core.write(400,43690),this.synth.core.write(402,170);for(let t=0;t<24;t+=2)this.configureModulator(t,this.lastMidi[t+1],this.lastBend[t+1]??this.instrumentBend)}}releaseInstrumentNote(e,r){let t=this.inspector.invoke("auditionOff",[e,r]);return t&&this.pmon.enabled&&this.synth.core.auditionKey(e-1,!1),t}stopInstrument(){this.inspector.resetAuditions(),this.synth.stopVoices(),this.resampler.reset(this.synth.core.nativeFrames),this.lastMidi.fill(null),this.lastBend.fill(null),this.voices.reset()}bentPitch(e,r,t){if(this.noise.enabled){if(!Number.isInteger(r)||r<0||r>127)throw new RangeError("MIDI note must be 0..127");return this.validateBend(t),4096}let s=this.synth.getPreset(e),o=this.synth.samples[s.sample];return this.pitchForSample(o,r,t)}pitchForSample(e,r,t){if(!Number.isInteger(r)||r<0||r>127)throw new RangeError("MIDI note must be 0..127");if(this.validateBend(t),!e)throw new Error("Assign an SPU ADPCM sample before using Keyboard");let s=Math.round(e.basePitch*440*2**((r-69+t)/12)/e.rootFrequencyHz);if(s<1||s>16383)throw new RangeError("Frequency is outside PS1 SPU PITCH range");return s}activeNotes(){return this.lastMidi.map((e,r)=>e!==null&&(this.synth.gates[r]||this.synth.core.read(r*16+12)>0)?e:null)}validateBend(e){if(!Number.isFinite(e)||e<-2||e>2)throw new RangeError("Pitch bend must be from -2 to 2 semitones")}validateInstrumentOptions(e,r=!1){let t=r?"retrigger":"live";if(!e||typeof e!="object"||Array.isArray(e)||Reflect.ownKeys(e).some(s=>s!==t)||e[t]!==void 0&&typeof e[t]!="boolean")throw new TypeError(`Expected {${t}?:boolean}`)}fail(e){this.dead||(this.port.postMessage({fatal:!0,error:String(e?.message??e)}),this.dispose())}dispose(){this.dead||(this.dead=!0,this.inspector?.resetAuditions(),this.synth?.dispose(),this.synth=null)}process(e,r){let t=r[0]?.[0],s=r[0]?.[1];if(!t||!s)return!this.dead;if(this.dead||!this.resampler)return t.fill(0),s.fill(0),!this.dead;try{return this.resampler.render(t,s),!0}catch(o){return t.fill(0),s.fill(0),this.fail(o),!1}}};registerProcessor("tetorica-spu-synth",L);export{L as SpuSynthProcessor};
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026, kyorohiro.
+import factory from '../generated/ps1_spu_wasm.js?v=spu-long-audio-1';
+import {Ps1Spu} from '../js/ps1_spu.js?v=ps1-deferred-release-1';
+import {Ps1Synth} from '../js/ps1synth.js?v=ps1-cyclic-1';
+import {Ps1Resampler} from '../js/ps1_resampler.js?v=ps1-mode-1';
+import {Ps1VoiceInspector} from '../js/playground_ps1_inspector.js?v=ps1-deferred-release-1';
+import {patchPs1Envelope} from '../js/ps1_parameters.js?v=ps1-voice-editor-1';
+import {SPU_SYNTH_MIX_HEADROOM} from './spu_synth_levels.js';
+import {readMorph, morphPcm} from './spu_synth_morph.js';
+import {readNoise} from './spu_synth_noise.js';
+import {readPmon, pmonAdsr} from './spu_synth_pmon.js';
+import {SpuRoundRobinVoices} from './spu_synth_voices.js?v=spu-synth-2';
+
+import {validateHostPcm} from './spu_synth_long_audio.js';
+
+const EDITOR_METHODS = new Set(['auditionOn', 'auditionOff', 'auditionAllOff', 'setWaveform', 'setPreset', 'setChannel', 'setEnvelope', 'setReverb', 'setPitch', 'setFrequency', 'setNote']);
+const SYNTH_METHODS = new Set(['loadADPCM', 'getPreset', 'snapshot', 'noteOn', 'noteOff', 'keyOn', 'keyOff', 'allNotesOff', '_auditionKeyOn', '_auditionKeyOff', '_refreshEnvelope']);
+const READ_METHODS = new Set(['inspect', 'getState', 'getPreset', 'getInstrument', 'snapshot']);
+
+/** One SPU and its fixed-rate resampler. Rendering has no UI polling, script
+ * execution, event dispatch, encoders or message allocation per audio block. */
+export class SpuSynthProcessor extends AudioWorkletProcessor {
+  constructor({processorOptions = {}} = {}) {
+    super();
+    this.dead = false;
+    this.synth = null;
+    this.inspector = null;
+    this.resampler = null;
+    this.lastMidi = Array(24).fill(null);
+    this.lastBend = Array(24).fill(null);
+    this.instrumentBend = 0;
+    this.pmon = readPmon();
+    this.noise = readNoise();
+    this.morph = readMorph({enabled:true});
+    this.pmonSample = null;
+    this.hostAudio = null;
+    this.hostSlot = null;
+    this.voices = new SpuRoundRobinVoices();
+    this.port.onmessage = ({data}) => {
+      if (data?.method === 'dispose') {this.dispose(); return;}
+      void this.ready.then(() => this.receive(data)).catch(() => {});
+    };
+    // AudioWorkletGlobalScope need not expose URL/fetch. Bytes are supplied
+    // by the main thread; locateFile bypasses the factory's URL fallback.
+    this.ready = Ps1Spu.create({moduleFactory:factory, moduleOptions:{wasmBinary:processorOptions.wasmBinary, locateFile:() => 'ps1_spu_wasm.wasm'}}).then(core => {
+      if (this.dead) {core.dispose(); return;}
+      this.synth = new Ps1Synth({core});
+      // Standalone software extension; the shared register/PCM JS API and its
+      // default legacy mixer remain unchanged for other chip hosts.
+      const headroom=core.module._ps1_spu_set_mix_headroom;
+      if(typeof headroom!=='function'||!headroom(core.handle,SPU_SYNTH_MIX_HEADROOM))throw new Error('SPU precision mixer is unavailable');
+      // The main thread prepares these bounded packets once. Each voice owns
+      // its editable slot, so changing one cycle cannot affect a sibling.
+      for (let ch = 0; ch < 24; ch++) {
+        const sample = this.synth._setWaveformPrepared(ch, processorOptions.initialWaveform);
+        this.synth.setPreset(ch, {sample});
+      }
+      this.inspector = new Ps1VoiceInspector(this.synth, {sampleRate});
+      this.resampler = new Ps1Resampler(this.synth, sampleRate);
+      this.syncModulators();
+      this.port.postMessage({ready:true, sampleRate, nativeSampleRate:44100, state:this.readState()});
+    }).catch(error => this.fail(error));
+  }
+
+  receive(data) {
+    const {id, method, args = []} = data ?? {};
+    try {
+      if (this.dead || !this.synth) throw new Error('SPU synth is not ready');
+      if (!Array.isArray(args)) throw new TypeError('SPU command arguments must be an array');
+      let value;
+      if (method === 'inspect' || method === 'getState') value = this.readState();
+      else if (method === 'loadHostPCM') {
+        const pcm=validateHostPcm(args[0]),options=args[1];
+        if (!options || typeof options.loop!=='boolean' || !Number.isFinite(options.baseFrequencyHz) || options.baseFrequencyHz<=0 || options.baseFrequencyHz>1000000) throw new TypeError('Invalid software audio tuning');
+        if (options.loop && pcm.length<4) throw new RangeError('Software audio loops require at least 4 frames');
+        const core=this.synth.core,m=core.module;
+        if (typeof m._ps1_spu_set_host_pcm!=='function' || typeof m._ps1_spu_set_host_mask!=='function') throw new Error('Software audio is unavailable');
+        // One shared, silent RAM placeholder retains the existing instrument
+        // editor and tuning API. Audio data itself never occupies SPU RAM.
+        if (!this.hostSlot) {
+          const bytes=new Uint8Array(16);bytes[0]=12;bytes[1]=1;
+          this.hostSlot=this.synth.loadADPCM(bytes,{baseFrequencyHz:options.baseFrequencyHz});
+        }
+        const ptr=m._malloc(pcm.byteLength);
+        if (!ptr) throw new Error('Not enough memory for this recording');
+        try {
+          m.HEAPU8.set(new Uint8Array(pcm.buffer,pcm.byteOffset,pcm.byteLength),ptr);
+          this.stopInstrument();
+          if (!m._ps1_spu_set_host_pcm(core.handle,ptr,pcm.length,Number(options.loop))) throw new Error('Not enough memory for software audio');
+        } finally {m._free(ptr);}
+        const slot=this.synth.samples[this.hostSlot.id];
+        this.hostSlot=slot;
+        // The descriptor is shared, with independent native playback cursors.
+        Object.assign(slot,{rootFrequencyHz:options.baseFrequencyHz,basePitch:4096,loop:options.loop,loopStartSamples:options.loop?0:null,decodedFrames:pcm.length});
+        this.hostAudio={pcm,baseFrequencyHz:options.baseFrequencyHz,loop:options.loop};
+        for (let ch=0;ch<24;ch++) this.authorChannel(ch,()=>this.inspector.invoke('setPreset',[ch,{sample:slot}]));
+        this.morph={...this.morph,enabled:false};
+        value={frames:pcm.length,duration:pcm.length/44100};
+      }
+      else if (method === 'instrumentNoteOn') {
+        const [midi, identity, bend = this.instrumentBend] = args;
+        if (typeof identity !== 'string' || !identity.length || identity.length > 128) throw new TypeError('Audition identity must contain 1..128 characters');
+        const channel = this.carrierChannel(this.voices.peek());
+        // The shared inspector also validates the unbent note before its
+        // manual transition, so reject that failure before taking a slot.
+        this.bentPitch(channel, midi, 0);
+        const pitch = this.bentPitch(channel, midi, bend);
+        // Validation precedes both the allocator mutation and manual KON.
+        // No message or render can interleave the lease and pitch writes.
+        const allocation = this.voices.allocate(identity);
+        if (this.noise.enabled) {
+          // Noise has no per-note PITCH. Use the same lease map and release
+          // path, without the shared sample inspector's tuning validation.
+          this.inspector.auditions.set(channel,identity);
+          this.inspector.beginAudition(channel,`voice-editor:${identity}`);
+          this.synth._auditionKeyOn(channel);
+        } else this.inspector.invoke('auditionOn', [channel, midi, identity]);
+        this.synth.setPitch(channel, pitch);
+        if (this.pmon.enabled) {this.configureModulator(channel-1, midi, bend); this.synth.core.auditionKey(channel-1, true);}
+        this.lastMidi[channel] = midi;
+        this.lastBend[channel] = bend;
+        value = {channel, stolenId:allocation.stolen?.id ?? null};
+      } else if (method === 'instrumentNoteOff') {
+        const channel = this.voices.release(args[0]);
+        value = channel === null ? false : this.releaseInstrumentNote(this.carrierChannel(channel), args[0]);
+      } else if (method === 'instrumentAllNotesOff') {
+        for (const entry of this.voices.entries()) this.releaseInstrumentNote(this.carrierChannel(entry.channel), entry.id);
+        this.voices.reset();
+        value = true;
+      }
+      else if (method === 'setInstrumentPmon') {
+        const next = readPmon(args[0]);
+        const prepared = args[1];
+        // Validate depth packets, tuning and capacity before stopping any note.
+        if (prepared) {
+          if (!Array.isArray(prepared.pcm) || prepared.pcm.length !== 112 || prepared.pcm.some(x => !Number.isFinite(x) || Math.abs(x)>1) || !ArrayBuffer.isView(prepared.adpcm) || prepared.adpcm.length !== 64) throw new TypeError('Invalid PMON waveform packets');
+          if (prepared.adpcm[1]!==6 || prepared.adpcm[17]!==0 || prepared.adpcm[33]!==0 || prepared.adpcm[49]!==3) throw new TypeError('PMON waveform must be four looping ADPCM packets');
+          if (!this.pmonSample && this.synth.nextAddress+64 > 524288) throw new RangeError('No sample RAM available for PMON');
+        }
+        if (next.enabled && (!this.pmonSample || !this.pmon.enabled) && !prepared) throw new Error('Prepare the PMON waveform before enabling');
+        if (next.enabled && (next.depth !== this.pmon.depth || next.waveform !== this.pmon.waveform) && this.pmonSample && !prepared) throw new Error('Prepare the PMON waveform for a depth change');
+        if (prepared && (!this.pmonSample || next.depth !== this.pmon.depth || next.waveform !== this.pmon.waveform || next.enabled && !this.pmon.enabled)) {
+          if (!this.pmonSample) this.pmonSample=this.synth.loadADPCM(prepared.adpcm,{baseFrequencyHz:44100/112,loopStartSamples:0});
+          else {this.synth.core.loadRam(prepared.adpcm,this.pmonSample.startAddress); this.synth.sampleBytes[this.pmonSample.id]=prepared.adpcm.slice();}
+        }
+        const topology = next.enabled !== this.pmon.enabled;
+        if (topology) this.stopInstrument();
+        this.pmon = next;
+        if (next.enabled) this.noise={...this.noise,enabled:false};
+        if (topology) this.voices = new SpuRoundRobinVoices(next.enabled ? 12 : 24);
+        this.syncModulators();
+        value = {...this.pmon};
+      }
+      else if (method === 'setInstrumentNoise') {
+        const next=readNoise(args[0]);
+        const topology=next.enabled!==this.noise.enabled;
+        if (topology) this.stopInstrument();
+        this.noise=next;
+        if (next.enabled) this.pmon={...this.pmon,enabled:false};
+        if (topology) this.voices=new SpuRoundRobinVoices(24);
+        value={...this.noise};
+      }
+      else if (method === 'auditionOn') {
+        if (this.pmon.enabled || this.noise.enabled) throw new Error('Use instrumentNoteOn for PMON or Noise voices');
+        // Validate the bent target before acquiring a manual note. Both pitch
+        // writes happen in this message handler, with no render in between.
+        const pitch = this.bentPitch(args[0], args[1], args[3] ?? this.instrumentBend);
+        value = this.inspector.invoke(method, args.slice(0, 3));
+        this.synth.setPitch(args[0], pitch);
+        this.lastMidi[args[0]] = args[1];
+        this.lastBend[args[0]] = args[3] ?? this.instrumentBend;
+      } else if (method === 'setPitchBend') {
+        // The caller supplies the original MIDI note, avoiding cumulative
+        // rounding/drift and allowing a Release tail to bend without KON.
+        const pitch = this.bentPitch(args[0], args[1], args[2]);
+        value = this.inspector.invoke('setPitch', [args[0], pitch]);
+        if (this.lastMidi[args[0]] !== null) {
+          this.lastMidi[args[0]] = args[1];
+          this.lastBend[args[0]] = args[2];
+        }
+      } else if (method === 'setInstrumentPitchBend') {
+        this.validateBend(args[0]);
+        // Include released notes while their decoder/envelope may still run.
+        // Compute all targets before changing any voice or the stored bend.
+        const notes = this.activeNotes();
+        const pitches = notes.map((midi, ch) => midi === null ? null : this.bentPitch(ch, midi, args[0]));
+        for (let ch = 0; ch < 24; ch++) if (pitches[ch] !== null) this.inspector.invoke('setPitch', [ch, pitches[ch]]);
+        this.lastMidi = notes;
+        this.lastBend = notes.map(midi => midi === null ? null : args[0]);
+        this.instrumentBend = args[0];
+        value = true;
+      } else if (method === 'setInstrumentEnvelope' || method === 'setInstrumentPreset') {
+        const [patch, options = {}] = args;
+        this.validateInstrumentOptions(options);
+        // Validate the entire instrument before applying a patch. In
+        // particular a private waveform ID cannot be shared between voices.
+        for (let ch = 0; ch < 24; ch++) {
+          if (method === 'setInstrumentPreset') this.synth._preset(ch, patch);
+          else {
+            const preset = this.synth.getPreset(ch);
+            patchPs1Envelope(preset.adsr1, preset.adsr2, patch);
+          }
+        }
+        for (let ch = 0; ch < 24; ch++) this.authorChannel(ch, () => this.inspector.invoke(method === 'setInstrumentPreset' ? 'setPreset' : 'setEnvelope', [ch, patch, options]));
+        if (method==='setInstrumentPreset' && patch.sample!==undefined) {
+          this.morph={...this.morph,enabled:false};
+          if (this.hostAudio && this.synth.getPreset(0).sample!==this.hostSlot.id) this.clearHostAudio();
+        }
+        value = true;
+      } else if (method === 'setInstrumentWaveform' || method === 'setInstrumentMorph') {
+        const nextMorph=method==='setInstrumentMorph' ? readMorph(args[0]) : null;
+        if (nextMorph && !nextMorph.enabled) {this.morph=nextMorph;value={...this.morph};}
+        else {
+          const [prepared, options = {}] = nextMorph ? [args[1],{retrigger:false}] : args;
+          if(nextMorph) {
+            const pcm=morphPcm(nextMorph);
+            if(!prepared || !Array.isArray(prepared.pcm) || prepared.pcm.length!==112 || pcm.some((x,i)=>x!==prepared.pcm[i]))throw new TypeError('Prepare matching Software morph waveform packets');
+          }
+          this.validateInstrumentOptions(options, true);
+          // Each voice reuses the private editor slot allocated at startup.
+          // One already-encoded cycle arrives in one message for all 24 slots.
+          for (let ch = 0; ch < 24; ch++) {
+            const slot = this.synth.editorWaveforms[ch];
+            const sample = slot && this.synth.samples[slot.sample];
+            if (!sample || sample.editorChannel !== ch || sample.byteLength !== 64) throw new Error('SPU instrument waveform slot is invalid');
+          }
+          if (this.hostAudio) {this.stopInstrument();this.clearHostAudio();}
+          const notes = this.activeNotes();
+          const pitches = notes.map((midi, ch) => midi === null ? null : this.noise.enabled ? 4096 : this.pitchForSample(this.synth.samples[this.synth.editorWaveforms[ch].sample], midi, this.lastBend[ch] ?? this.instrumentBend));
+          for (let ch = 0; ch < 24; ch++) {
+            const sample = this.authorChannel(ch, () => this.inspector.invoke('setWaveform', [ch, prepared, options]));
+            if (ch === 0) value = sample;
+          }
+          // Imported audio can have a different root frequency. Retune each
+          // current note to the new private cycle before another audio block,
+          // retaining its original MIDI note and explicit/global bend.
+          for (let ch = 0; ch < 24; ch++) if (pitches[ch] !== null) this.inspector.invoke('setPitch', [ch, pitches[ch]]);
+          this.lastMidi = notes;
+          for (let ch = 0; ch < 24; ch++) if (notes[ch] === null) this.lastBend[ch] = null;
+          this.morph=nextMorph ?? {...this.morph,enabled:false};
+          if(nextMorph)value={...this.morph};
+        }
+      }
+      else if (method === 'setInstrumentReverbPreset') {
+        const patch=args[0];
+        this.synth._reverb(patch);
+        if (typeof patch.preset!=='string') throw new TypeError('Choose an SPU reverb preset');
+        const enabled=patch.preset!=='off';
+        // One audio-thread transaction: select the effect and change every
+        // carrier send before another render or state reply can interleave.
+        this.inspector.invoke('setReverb',[patch]);
+        for(let ch=0;ch<24;ch++) this.authorChannel(ch,()=>this.inspector.invoke('setPreset',[ch,{reverb:enabled}]));
+        value=true;
+      }
+      else if (method === 'getInstrument') {
+        const preset = this.synth.getPreset(args[0]), sample = this.synth.samples[preset.sample];
+        if (!sample) throw new Error('Assign an SPU sample before saving an instrument');
+        const tuning = this.hostAudio && sample.id===this.hostSlot.id ? {...this.hostAudio} : {adpcm:this.synth.sampleBytes[sample.id].slice(), baseFrequencyHz:sample.rootFrequencyHz};
+        if (sample.loop && !tuning.pcm) tuning.loopStartSamples = sample.loopStartSamples;
+        const editor = this.synth.editorWaveforms[args[0]];
+        value = {preset, sample:tuning, pmon:{...this.pmon}, noise:{...this.noise}, morph:readMorph(this.morph), reverb:{...this.synth.reverb}, waveform:editor?.sample === sample.id ? editor.pcm.slice() : null};
+      }
+      else if (method === 'stop' || method === 'stopVoices') {
+        this.stopInstrument();
+        value = true;
+      } else if (EDITOR_METHODS.has(method)) value = this.inspector.invoke(method, args);
+      else if (SYNTH_METHODS.has(method)) value = this.synth[method](...args);
+      else throw new Error(`Unknown SPU synth command: ${method}`);
+      if (!READ_METHODS.has(method)) this.syncModulators();
+      const reply = {id, value};
+      // Snapshots are sent only after explicit requests or completed edits.
+      // Audio blocks never send level/state updates to the UI.
+      if (!READ_METHODS.has(method)) reply.state = this.readState();
+      this.port.postMessage(reply);
+    } catch (error) {
+      this.port.postMessage({id, error:String(error?.message ?? error), name:error?.name ?? 'Error'});
+    }
+  }
+
+  clearHostAudio() {
+    const c=this.synth.core;
+    c.module._ps1_spu_set_host_mask(c.handle,0);
+    c.module._ps1_spu_set_host_pcm(c.handle,0,0,0);
+    this.hostAudio=null;
+  }
+
+  readState() {return {...this.inspector.read(), hostAudio:this.hostAudio ? {frames:this.hostAudio.pcm.length,duration:this.hostAudio.pcm.length/44100,loop:this.hostAudio.loop} : null, pmon:{...this.pmon}, noise:{...this.noise}, morph:readMorph(this.morph), pmonSampleReserved:Boolean(this.pmonSample), polyphony:this.pmon.enabled ? 12 : 24};}
+  carrierChannel(slot) {return this.pmon.enabled ? slot*2+1 : slot;}
+  authorChannel(ch, apply) {
+    if (!this.pmon.enabled || ch%2) return apply();
+    // Keep one canonical authored instrument in every slot. Even channels
+    // are physically configured as modulators only while pairing is enabled.
+    const core=this.synth.core, write=core.write, refresh=core.refreshEnvelope;
+    core.write=()=>{}; core.refreshEnvelope=()=>{};
+    try {return apply();} finally {core.write=write; core.refreshEnvelope=refresh;}
+  }
+  configureModulator(ch, midi, bend) {
+    const core=this.synth.core, sample=this.pmonSample;
+    const {adsr1,adsr2}=pmonAdsr(this.pmon.decayMs,this.synth.getPreset(ch+1).adsr2);
+    const pitch=midi===null ? 0 : Math.max(1,Math.min(0x3fff,Math.round(4096*440*2**((midi-69+bend)/12)*this.pmon.ratio/(44100/112))));
+    for (const [offset,value] of [[0,0],[2,0],[4,pitch],[6,sample.startAddress>>3],[8,adsr1],[10,adsr2],[14,sample.repeatAddress>>3]]) core.write(ch*16+offset,value);
+  }
+  syncModulators() {
+    const core=this.synth.core;
+    let mask=0;
+    if (this.hostAudio && !this.noise.enabled) for(let ch=0;ch<24;ch++) {
+      if ((!this.pmon.enabled || ch%2) && this.synth.getPreset(ch).sample===this.hostSlot.id) mask|=1<<ch;
+    }
+    core.module._ps1_spu_set_host_mask?.(core.handle,mask);
+    core.write(0x194,this.noise.enabled ? 0xffff : 0);
+    core.write(0x196,this.noise.enabled ? 0xff : 0);
+    core.write(0x1aa,(core.read(0x1aa)&~0x3f00)|((this.noise.enabled ? this.noise.clock : 0)<<8));
+    if (this.noise.enabled) {
+      core.write(0x190,0);core.write(0x192,0);
+      // Preserve the authored PCM/audio sample. Noise uses the existing
+      // private looping slot so a one-shot recording cannot end a noise note.
+      for(let ch=0;ch<24;ch++) {
+        const sample=this.synth.samples[this.synth.editorWaveforms[ch].sample];
+        core.write(ch*16+6,sample.startAddress>>3);
+        core.write(ch*16+14,sample.repeatAddress>>3);
+        core.write(ch*16+4,4096);
+      }
+    }
+    if (!this.pmon.enabled) return;
+    // Odd voices consume the preceding even voice's post-envelope OUTX.
+    this.synth.core.write(0x190,0xaaaa); this.synth.core.write(0x192,0xaa);
+    for (let ch=0;ch<24;ch+=2) this.configureModulator(ch,this.lastMidi[ch+1],this.lastBend[ch+1] ?? this.instrumentBend);
+  }
+  releaseInstrumentNote(ch, id) {
+    const released=this.inspector.invoke('auditionOff',[ch,id]);
+    if (released && this.pmon.enabled) this.synth.core.auditionKey(ch-1,false);
+    return released;
+  }
+  stopInstrument() {
+    this.inspector.resetAuditions(); this.synth.stopVoices();
+    this.resampler.reset(this.synth.core.nativeFrames);
+    this.lastMidi.fill(null); this.lastBend.fill(null); this.voices.reset();
+  }
+
+  bentPitch(channel, midi, semitones) {
+    if (this.noise.enabled) {
+      if (!Number.isInteger(midi) || midi<0 || midi>127) throw new RangeError('MIDI note must be 0..127');
+      this.validateBend(semitones);return 4096;
+    }
+    const preset = this.synth.getPreset(channel), sample = this.synth.samples[preset.sample];
+    return this.pitchForSample(sample, midi, semitones);
+  }
+
+  pitchForSample(sample, midi, semitones) {
+    if (!Number.isInteger(midi) || midi < 0 || midi > 127) throw new RangeError('MIDI note must be 0..127');
+    this.validateBend(semitones);
+    if (!sample) throw new Error('Assign an SPU ADPCM sample before using Keyboard');
+    const pitch = Math.round(sample.basePitch * 440 * 2 ** ((midi - 69 + semitones) / 12) / sample.rootFrequencyHz);
+    if (pitch < 1 || pitch > 0x3fff) throw new RangeError('Frequency is outside PS1 SPU PITCH range');
+    return pitch;
+  }
+
+  activeNotes() {
+    // A released voice is a bend target until its envelope actually reaches
+    // zero. Finished notes must not block later changes with stale tuning.
+    return this.lastMidi.map((midi, ch) => midi !== null && (this.synth.gates[ch] || this.synth.core.read(ch * 16 + 12) > 0) ? midi : null);
+  }
+
+  validateBend(semitones) {
+    if (!Number.isFinite(semitones) || semitones < -2 || semitones > 2) throw new RangeError('Pitch bend must be from -2 to 2 semitones');
+  }
+
+  validateInstrumentOptions(value, waveform = false) {
+    const key = waveform ? 'retrigger' : 'live';
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Reflect.ownKeys(value).some(name => name !== key) || value[key] !== undefined && typeof value[key] !== 'boolean') throw new TypeError(`Expected {${key}?:boolean}`);
+  }
+
+  fail(error) {
+    if (this.dead) return;
+    this.port.postMessage({fatal:true, error:String(error?.message ?? error)});
+    this.dispose();
+  }
+
+  dispose() {
+    if (this.dead) return;
+    this.dead = true;
+    this.inspector?.resetAuditions();
+    this.synth?.dispose();
+    this.synth = null;
+  }
+
+  process(_inputs, outputs) {
+    const left = outputs[0]?.[0], right = outputs[0]?.[1];
+    if (!left || !right) return !this.dead;
+    if (this.dead || !this.resampler) {left.fill(0); right.fill(0); return !this.dead;}
+    try {this.resampler.render(left, right); return true;}
+    catch (error) {left.fill(0); right.fill(0); this.fail(error); return false;}
+  }
+}
+
+registerProcessor('tetorica-spu-synth', SpuSynthProcessor);
