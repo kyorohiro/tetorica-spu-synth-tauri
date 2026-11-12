@@ -1,0 +1,695 @@
+{
+  "passed": true,
+  "dist": "/Users/kyorohiro/development8/wfm/hello_ymfm/w/tetorica-spu-synth-tauri/dist",
+  "origin": "https://tauri.localhost",
+  "simulates": "Rust js_init_script plus exact audio-interface append to synth-spu/synth.js",
+  "nativeCallsStubbed": true,
+  "physicalOutputMuted": true,
+  "listeningPerformed": false,
+  "sources": {
+    "desktopInterface": "891a678ed07fdbf90307f9eb40fda5163289ed61a25c81492148253d0dda2b32",
+    "audioInterface": "dc0cc085cef77f50690bf111f31e2b1d819917bf5bff09cb85dbb23cfc48b103",
+    "checker": "b16f66b0a16de6a5ae08869f0a3dfd71ce26313b44651961298d76116663a69c"
+  },
+  "results": [
+    {
+      "browser": "chromium",
+      "passed": true,
+      "checks": [
+        "The exact original menu DOM is reused once in the title toolbar, before Pin",
+        "Repeated ready events keep Pin and menu handlers single",
+        "VAB and PSF file actions still target their original inputs and bank tab",
+        "Menu and Pin remain visible in expanded Code and at the supported 640px minimum",
+        "Legacy pages without a frontend menu receive one fallback and retain old JSON handlers"
+      ],
+      "identity": {
+        "sameMenu": true,
+        "originalParent": "transport-actions",
+        "preserved": true,
+        "titleHost": "synth-title-group"
+      },
+      "layouts": [
+        {
+          "width": 1240,
+          "scrollWidth": 1240,
+          "menu": {
+            "x": 52,
+            "y": 140,
+            "width": 36,
+            "height": 36
+          },
+          "pin": {
+            "x": 94,
+            "y": 140,
+            "width": 36,
+            "height": 36
+          }
+        },
+        {
+          "width": 640,
+          "scrollWidth": 640,
+          "menu": {
+            "x": 26,
+            "y": 133.078125,
+            "width": 36,
+            "height": 36
+          },
+          "pin": {
+            "x": 68,
+            "y": 133.078125,
+            "width": 36,
+            "height": 36
+          }
+        }
+      ],
+      "graph": {
+        "contexts": 0,
+        "destinations": 0,
+        "muted": true
+      },
+      "legacyNativeCalls": [
+        {
+          "command": "window_pin_state",
+          "args": {}
+        },
+        {
+          "command": "set_window_pin",
+          "args": {
+            "pinned": true
+          }
+        }
+      ],
+      "errors": [],
+      "consoleErrors": []
+    },
+    {
+      "browser": "webkit",
+      "passed": true,
+      "checks": [
+        "The exact original menu DOM is reused once in the title toolbar, before Pin",
+        "Repeated ready events keep Pin and menu handlers single",
+        "VAB and PSF file actions still target their original inputs and bank tab",
+        "Menu and Pin remain visible in expanded Code and at the supported 640px minimum",
+        "Legacy pages without a frontend menu receive one fallback and retain old JSON handlers"
+      ],
+      "identity": {
+        "sameMenu": true,
+        "originalParent": "transport-actions",
+        "preserved": true,
+        "titleHost": "synth-title-group"
+      },
+      "layouts": [
+        {
+          "width": 1240,
+          "scrollWidth": 1240,
+          "menu": {
+            "x": 52,
+            "y": 140,
+            "width": 36,
+            "height": 36
+          },
+          "pin": {
+            "x": 94,
+            "y": 140,
+            "width": 36,
+            "height": 36
+          }
+        },
+        {
+          "width": 640,
+          "scrollWidth": 640,
+          "menu": {
+            "x": 26,
+            "y": 133.046875,
+            "width": 36,
+            "height": 36
+          },
+          "pin": {
+            "x": 68,
+            "y": 133.046875,
+            "width": 36,
+            "height": 36
+          }
+        }
+      ],
+      "graph": {
+        "contexts": 0,
+        "destinations": 0,
+        "muted": true
+      },
+      "legacyNativeCalls": [
+        {
+          "command": "window_pin_state",
+          "args": {}
+        },
+        {
+          "command": "set_window_pin",
+          "args": {
+            "pinned": true
+          }
+        }
+      ],
+      "errors": [],
+      "consoleErrors": []
+    }
+  ],
+  "missing": [],
+  "blocked": [
+    "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js"
+  ],
+  "assets": {
+    "/generated/psf-player/psf_player.js": {
+      "sourceBytes": 57343,
+      "sourceSha256": "455b51757246d10fdb622a76c8cdd86c7359c26104a891e21eb555fe6ec4ab23",
+      "servedBytes": 57343,
+      "servedSha256": "455b51757246d10fdb622a76c8cdd86c7359c26104a891e21eb555fe6ec4ab23"
+    },
+    "/index.html": {
+      "sourceBytes": 28080,
+      "sourceSha256": "33b6e39d7847ce38738044103bc645527f801030a0c903319d3ac85d3438bbf2",
+      "servedBytes": 28080,
+      "servedSha256": "33b6e39d7847ce38738044103bc645527f801030a0c903319d3ac85d3438bbf2"
+    },
+    "/js/audio_decode.js": {
+      "sourceBytes": 1955,
+      "sourceSha256": "0f972b3983adb38f09e218cf4f1b1dc2fc5e840f0e3cf754c4bd2cd40083e9f4",
+      "servedBytes": 1955,
+      "servedSha256": "0f972b3983adb38f09e218cf4f1b1dc2fc5e840f0e3cf754c4bd2cd40083e9f4"
+    },
+    "/js/megasynth-fm-presets.js": {
+      "sourceBytes": 6954,
+      "sourceSha256": "daf3c42d3d6b1777d5729073eed9edf4d96a78d55e22fedfad394137d41bb06c",
+      "servedBytes": 6954,
+      "servedSha256": "daf3c42d3d6b1777d5729073eed9edf4d96a78d55e22fedfad394137d41bb06c"
+    },
+    "/js/native_fx_rack.js": {
+      "sourceBytes": 2128,
+      "sourceSha256": "92e57a539409d7139e4820d275fedff5e9862765f34a5cb3b3c07c67608429a5",
+      "servedBytes": 2128,
+      "servedSha256": "92e57a539409d7139e4820d275fedff5e9862765f34a5cb3b3c07c67608429a5"
+    },
+    "/js/native_fx.js": {
+      "sourceBytes": 7922,
+      "sourceSha256": "42cf0829acbc3cf779a5fc2005a6c1ac1ecfee92075f468da968c59b0fe4e27f",
+      "servedBytes": 7922,
+      "servedSha256": "42cf0829acbc3cf779a5fc2005a6c1ac1ecfee92075f468da968c59b0fe4e27f"
+    },
+    "/js/native_noise.js": {
+      "sourceBytes": 4209,
+      "sourceSha256": "c0ce2bdb16f1aed62e6b83f1b27c8e37b25fa2ee5035f0d332f59cd21ae3996f",
+      "servedBytes": 4209,
+      "servedSha256": "c0ce2bdb16f1aed62e6b83f1b27c8e37b25fa2ee5035f0d332f59cd21ae3996f"
+    },
+    "/js/native_sample.js": {
+      "sourceBytes": 3645,
+      "sourceSha256": "c281830126e7197cdec59cfdd8c7c1cd51ce26d53afe1887399e1aa81e5b07e0",
+      "servedBytes": 3645,
+      "servedSha256": "c281830126e7197cdec59cfdd8c7c1cd51ce26d53afe1887399e1aa81e5b07e0"
+    },
+    "/js/pitch.js": {
+      "sourceBytes": 1888,
+      "sourceSha256": "fd20f1f31c6c02fcf48213ed51209185a7addc8c526c867e7214563d6825cf42",
+      "servedBytes": 1888,
+      "servedSha256": "fd20f1f31c6c02fcf48213ed51209185a7addc8c526c867e7214563d6825cf42"
+    },
+    "/js/playground_async_tasks.js": {
+      "sourceBytes": 2223,
+      "sourceSha256": "17fa8f4c308b5cd758c5230f274da3a1b4a984f3752479ebfd0e184b9bda08fd",
+      "servedBytes": 2223,
+      "servedSha256": "17fa8f4c308b5cd758c5230f274da3a1b4a984f3752479ebfd0e184b9bda08fd"
+    },
+    "/js/playground_clock.js": {
+      "sourceBytes": 19367,
+      "sourceSha256": "e16aeee557adf6b1752bd48907e0671a979b2dd0c46a4afaa20befa9db7e885d",
+      "servedBytes": 19367,
+      "servedSha256": "e16aeee557adf6b1752bd48907e0671a979b2dd0c46a4afaa20befa9db7e885d"
+    },
+    "/js/playground_code_runtime.js": {
+      "sourceBytes": 21158,
+      "sourceSha256": "79c8c745a2bd718fc9c2c1cc5f8efb2f1e6b1191a9a19c680149948ffe0694d1",
+      "servedBytes": 21158,
+      "servedSha256": "79c8c745a2bd718fc9c2c1cc5f8efb2f1e6b1191a9a19c680149948ffe0694d1"
+    },
+    "/js/playground_duration.js": {
+      "sourceBytes": 2009,
+      "sourceSha256": "b6f1664b84569fd627d4d4e82a6c0b500edf142a3d9ced13f33ab5dc5606bfb1",
+      "servedBytes": 2009,
+      "servedSha256": "b6f1664b84569fd627d4d4e82a6c0b500edf142a3d9ced13f33ab5dc5606bfb1"
+    },
+    "/js/playground_execution.js": {
+      "sourceBytes": 8875,
+      "sourceSha256": "a4178b59713536fd21af4edd367b4afe2e9efbe2fee42862f61c59cc9d80b82e",
+      "servedBytes": 8875,
+      "servedSha256": "a4178b59713536fd21af4edd367b4afe2e9efbe2fee42862f61c59cc9d80b82e"
+    },
+    "/js/playground_live.js": {
+      "sourceBytes": 14734,
+      "sourceSha256": "e2cb7e5982d4e607ca72ac7d3af9e5613ba5410611dc591f1ae52e941e663f4e",
+      "servedBytes": 14734,
+      "servedSha256": "e2cb7e5982d4e607ca72ac7d3af9e5613ba5410611dc591f1ae52e941e663f4e"
+    },
+    "/js/playground_log.js": {
+      "sourceBytes": 842,
+      "sourceSha256": "a2a19ce457264c639b1afcb53d9758491a69dec7bee26c0a503c8a07d2a98ff6",
+      "servedBytes": 842,
+      "servedSha256": "a2a19ce457264c639b1afcb53d9758491a69dec7bee26c0a503c8a07d2a98ff6"
+    },
+    "/js/playground_music.js": {
+      "sourceBytes": 11300,
+      "sourceSha256": "26fb0f1839616deb531b7f2cfa6ad0b7049e9d53c9c045b7231024e69209b7d6",
+      "servedBytes": 11300,
+      "servedSha256": "26fb0f1839616deb531b7f2cfa6ad0b7049e9d53c9c045b7231024e69209b7d6"
+    },
+    "/js/ps1_adpcm_encoder.js": {
+      "sourceBytes": 10402,
+      "sourceSha256": "f1e24d4e67d609bdecebe2bedd6271961d8ea2010081f1b4f84f0ee29a97d8e2",
+      "servedBytes": 10402,
+      "servedSha256": "f1e24d4e67d609bdecebe2bedd6271961d8ea2010081f1b4f84f0ee29a97d8e2"
+    },
+    "/js/ps1_parameters.js": {
+      "sourceBytes": 6237,
+      "sourceSha256": "c5e4d60ffb4605bac11b275a9089895c114732fc51f1a9f04c88e5133dd3ced1",
+      "servedBytes": 6237,
+      "servedSha256": "c5e4d60ffb4605bac11b275a9089895c114732fc51f1a9f04c88e5133dd3ced1"
+    },
+    "/js/ps1_spu.js": {
+      "sourceBytes": 10862,
+      "sourceSha256": "d7fca7f2e4e9b7292cb5157d6e9ea1df67dd98b6facae478063f44864ae67769",
+      "servedBytes": 10862,
+      "servedSha256": "d7fca7f2e4e9b7292cb5157d6e9ea1df67dd98b6facae478063f44864ae67769"
+    },
+    "/js/ps1_waveform.js": {
+      "sourceBytes": 1088,
+      "sourceSha256": "5ca293b60ea15b87dc895c51d806ef54887efe4e961ef479f59d562d0d5dd820",
+      "servedBytes": 1088,
+      "servedSha256": "5ca293b60ea15b87dc895c51d806ef54887efe4e961ef479f59d562d0d5dd820"
+    },
+    "/js/ps1synth.js": {
+      "sourceBytes": 21748,
+      "sourceSha256": "efe17157a7d127cf8835a6c0c5de1a17135ef9e11a417b111b61858050fc5193",
+      "servedBytes": 21748,
+      "servedSha256": "efe17157a7d127cf8835a6c0c5de1a17135ef9e11a417b111b61858050fc5193"
+    },
+    "/js/soundchip_mixer_presets.js": {
+      "sourceBytes": 3295,
+      "sourceSha256": "a43c6bacc2f7d2d180002fce7965f9938a7b435db34bcb2a499554f34f14d8b4",
+      "servedBytes": 3295,
+      "servedSha256": "a43c6bacc2f7d2d180002fce7965f9938a7b435db34bcb2a499554f34f14d8b4"
+    },
+    "/js/soundchip_pitch.js": {
+      "sourceBytes": 2854,
+      "sourceSha256": "c8bcce0f27c2500d6090b5e56660e697b8b03d7ec011cee4deba05664038bae9",
+      "servedBytes": 2854,
+      "servedSha256": "c8bcce0f27c2500d6090b5e56660e697b8b03d7ec011cee4deba05664038bae9"
+    },
+    "/js/tetorica_virtual_files/filesystem.js": {
+      "sourceBytes": 20206,
+      "sourceSha256": "25f821472b25bc58cf4b840a44111b2639013861ef14191de8bd684e973c9b41",
+      "servedBytes": 20206,
+      "servedSha256": "25f821472b25bc58cf4b840a44111b2639013861ef14191de8bd684e973c9b41"
+    },
+    "/js/tetorica_virtual_files/path.js": {
+      "sourceBytes": 1112,
+      "sourceSha256": "79be21a2ba017b48882cfd69f01edd19a3e6858190405cc0d4588dcfd8a218a4",
+      "servedBytes": 1112,
+      "servedSha256": "79be21a2ba017b48882cfd69f01edd19a3e6858190405cc0d4588dcfd8a218a4"
+    },
+    "/js/tetorica_virtual_files/reader.js": {
+      "sourceBytes": 1404,
+      "sourceSha256": "90b21ba56ced53f65508513bc5741bea9b62af0b580fe218723628800ad76c6f",
+      "servedBytes": 1404,
+      "servedSha256": "90b21ba56ced53f65508513bc5741bea9b62af0b580fe218723628800ad76c6f"
+    },
+    "/js/tetorica_virtual_files/sync.js": {
+      "sourceBytes": 5701,
+      "sourceSha256": "7c2cb490bbf0ce036a79e1d513efcf41d1476e2ec778fe1867069a7a926432d4",
+      "servedBytes": 5701,
+      "servedSha256": "7c2cb490bbf0ce036a79e1d513efcf41d1476e2ec778fe1867069a7a926432d4"
+    },
+    "/playground/playground_cassette.js": {
+      "sourceBytes": 14751,
+      "sourceSha256": "685f14c303706e60f27809b2c53d84003e356d1ce774df523475799b245a3346",
+      "servedBytes": 14751,
+      "servedSha256": "685f14c303706e60f27809b2c53d84003e356d1ce774df523475799b245a3346"
+    },
+    "/playground/playground_declarations.js": {
+      "sourceBytes": 2945,
+      "sourceSha256": "7701ce32ef1139309f457f6d98964a11ba6153ed0eb58f9a36af4066689d3255",
+      "servedBytes": 2945,
+      "servedSha256": "7701ce32ef1139309f457f6d98964a11ba6153ed0eb58f9a36af4066689d3255"
+    },
+    "/playground/playground_example_order.js": {
+      "sourceBytes": 315,
+      "sourceSha256": "0764d46c06697fef7f111b69b9f6d3f4a0ad9c8c96218929cffdab79af4b1209",
+      "servedBytes": 315,
+      "servedSha256": "0764d46c06697fef7f111b69b9f6d3f4a0ad9c8c96218929cffdab79af4b1209"
+    },
+    "/playground/playground_file_tree.js": {
+      "sourceBytes": 4862,
+      "sourceSha256": "7bbc4c40fb6d30e65d36d9408c2c0337dbcee6ae3770fa85b379ba27ae9cee30",
+      "servedBytes": 4862,
+      "servedSha256": "7bbc4c40fb6d30e65d36d9408c2c0337dbcee6ae3770fa85b379ba27ae9cee30"
+    },
+    "/playground/playground_monaco_completion.js": {
+      "sourceBytes": 45033,
+      "sourceSha256": "ca6c6bf3acb8d1a5fc4246fc0e598b5603d221610353f8c063e0ed43249f5f49",
+      "servedBytes": 45033,
+      "servedSha256": "ca6c6bf3acb8d1a5fc4246fc0e598b5603d221610353f8c063e0ed43249f5f49"
+    },
+    "/playground/playground_monaco_definitions.js": {
+      "sourceBytes": 18853,
+      "sourceSha256": "252707f45af5bccba99e8bf585dfc742b0666f6526d5f424ad50c6c2bad87f10",
+      "servedBytes": 18853,
+      "servedSha256": "252707f45af5bccba99e8bf585dfc742b0666f6526d5f424ad50c6c2bad87f10"
+    },
+    "/playground/playground_monaco.js": {
+      "sourceBytes": 23177,
+      "sourceSha256": "28e8bfb630eba7caf09c3a749ea01477eea7a039e463554405b15cf391debca8",
+      "servedBytes": 23177,
+      "servedSha256": "28e8bfb630eba7caf09c3a749ea01477eea7a039e463554405b15cf391debca8"
+    },
+    "/playground/playground_ps1_envelope.js": {
+      "sourceBytes": 1927,
+      "sourceSha256": "bfd6b756a4edf7b80a69f42e4236f4f640905f362a5a38d3f0e5e19a219883de",
+      "servedBytes": 1927,
+      "servedSha256": "bfd6b756a4edf7b80a69f42e4236f4f640905f362a5a38d3f0e5e19a219883de"
+    },
+    "/playground/playground_ps1_psf.js": {
+      "sourceBytes": 20531,
+      "sourceSha256": "87cd20d5171521bb5d377d22641a79c4c4430380f9dd52b3176ce31f8eed16f2",
+      "servedBytes": 20531,
+      "servedSha256": "87cd20d5171521bb5d377d22641a79c4c4430380f9dd52b3176ce31f8eed16f2"
+    },
+    "/playground/playground_ps1_vab_panel.js": {
+      "sourceBytes": 12043,
+      "sourceSha256": "13aebbebf1e572c5a5ac666b41951976f836f0bc5ea876cef028cee528944876",
+      "servedBytes": 12043,
+      "servedSha256": "13aebbebf1e572c5a5ac666b41951976f836f0bc5ea876cef028cee528944876"
+    },
+    "/playground/playground_ps1_vab.js": {
+      "sourceBytes": 10786,
+      "sourceSha256": "f48cc1c0cb5ddd81bf34b8a2f2d4701c86bac6a8a9242d36ee85f0a9e537cee3",
+      "servedBytes": 10786,
+      "servedSha256": "f48cc1c0cb5ddd81bf34b8a2f2d4701c86bac6a8a9242d36ee85f0a9e537cee3"
+    },
+    "/playground/playground_ps1_voice_panel.js": {
+      "sourceBytes": 36580,
+      "sourceSha256": "6e9111155b25fb822ec4f61efd9a0a1c863fb106a933240a272444d0f7ed2ef1",
+      "servedBytes": 36580,
+      "servedSha256": "6e9111155b25fb822ec4f61efd9a0a1c863fb106a933240a272444d0f7ed2ef1"
+    },
+    "/playground/playground_virtual_files.js": {
+      "sourceBytes": 5205,
+      "sourceSha256": "d8d0a6f9c1046181936ef38bbd555d96d6e814eca567f51306f05e998554ae41",
+      "servedBytes": 5205,
+      "servedSha256": "d8d0a6f9c1046181936ef38bbd555d96d6e814eca567f51306f05e998554ae41"
+    },
+    "/playground/vendor/fflate.js": {
+      "sourceBytes": 90922,
+      "sourceSha256": "b7ca4450b19559a1d50eb381adcee94b82449674be4cd17789d9beba7e6122a1",
+      "servedBytes": 90922,
+      "servedSha256": "b7ca4450b19559a1d50eb381adcee94b82449674be4cd17789d9beba7e6122a1"
+    },
+    "/synth-spu/code_audio.js": {
+      "sourceBytes": 4987,
+      "sourceSha256": "7ad3705c9a1632aeaa33886a5cee5e203bf7d845f1e7e437c91108dba9b46aa3",
+      "servedBytes": 4987,
+      "servedSha256": "7ad3705c9a1632aeaa33886a5cee5e203bf7d845f1e7e437c91108dba9b46aa3"
+    },
+    "/synth-spu/code_declarations.js": {
+      "sourceBytes": 3264,
+      "sourceSha256": "83aad8aa3f9ddc98a21fbf3a0e000a828107390b0cba9c57e5d32fabd9fdc54d",
+      "servedBytes": 3264,
+      "servedSha256": "83aad8aa3f9ddc98a21fbf3a0e000a828107390b0cba9c57e5d32fabd9fdc54d"
+    },
+    "/synth-spu/code_files.js": {
+      "sourceBytes": 32376,
+      "sourceSha256": "516d16473961ca6c4759f125f0c6350e7a9a516d071d25195ccd100c6e0552c7",
+      "servedBytes": 32376,
+      "servedSha256": "516d16473961ca6c4759f125f0c6350e7a9a516d071d25195ccd100c6e0552c7"
+    },
+    "/synth-spu/code_host.js": {
+      "sourceBytes": 4280,
+      "sourceSha256": "3356c77e490e78b1a38ec1d4172c0d2c42d3f9f61ba6725a597f02e28a298087",
+      "servedBytes": 4280,
+      "servedSha256": "3356c77e490e78b1a38ec1d4172c0d2c42d3f9f61ba6725a597f02e28a298087"
+    },
+    "/synth-spu/code_live.js": {
+      "sourceBytes": 3784,
+      "sourceSha256": "7f2e6ba24a846b7c6daff3938d101a250ddfdfe84579a8c88c039de8b0780a53",
+      "servedBytes": 3784,
+      "servedSha256": "7f2e6ba24a846b7c6daff3938d101a250ddfdfe84579a8c88c039de8b0780a53"
+    },
+    "/synth-spu/code_project.js": {
+      "sourceBytes": 9515,
+      "sourceSha256": "cdf724a3f3e9d342939655fc23d77f87ea55833a1a2d29fcad9da03b6fdb52db",
+      "servedBytes": 9515,
+      "servedSha256": "cdf724a3f3e9d342939655fc23d77f87ea55833a1a2d29fcad9da03b6fdb52db"
+    },
+    "/synth-spu/file_context_menu.js": {
+      "sourceBytes": 6313,
+      "sourceSha256": "246c5bc3108826c68c85c3539c45bafa939e1ef99d69dd84cf81b416e40786c3",
+      "servedBytes": 6313,
+      "servedSha256": "246c5bc3108826c68c85c3539c45bafa939e1ef99d69dd84cf81b416e40786c3"
+    },
+    "/synth-spu/icon.png": {
+      "sourceBytes": 2663786,
+      "sourceSha256": "487976de5e09bbef144cc5f7b187153dc5a79cf8274c96977382f337ea65d580",
+      "servedBytes": 2663786,
+      "servedSha256": "487976de5e09bbef144cc5f7b187153dc5a79cf8274c96977382f337ea65d580"
+    },
+    "/synth-spu/psf_capture.js": {
+      "sourceBytes": 9591,
+      "sourceSha256": "702d65c7a7b807dcf08ccc9f3bd6be33cd38adbef49ce477312d77588a440b4c",
+      "servedBytes": 9591,
+      "servedSha256": "702d65c7a7b807dcf08ccc9f3bd6be33cd38adbef49ce477312d77588a440b4c"
+    },
+    "/synth-spu/psf_channel_activity.js": {
+      "sourceBytes": 3653,
+      "sourceSha256": "54005490cca8822a8c1bdd9e24e30df7476a15e29bff1ec9368b4de2c7d70afc",
+      "servedBytes": 3653,
+      "servedSha256": "54005490cca8822a8c1bdd9e24e30df7476a15e29bff1ec9368b4de2c7d70afc"
+    },
+    "/synth-spu/psf_live_snapshot.js": {
+      "sourceBytes": 7953,
+      "sourceSha256": "ec8a0a0f78506e48a0046c9c09ff83cbcd3f35b2e569574c262a1366b3d18dd0",
+      "servedBytes": 7953,
+      "servedSha256": "ec8a0a0f78506e48a0046c9c09ff83cbcd3f35b2e569574c262a1366b3d18dd0"
+    },
+    "/synth-spu/psf_paused_audition.js": {
+      "sourceBytes": 10293,
+      "sourceSha256": "c0e064583b47e35a039487e9faa795d92eeda975a05a37a5188232d60e8bf485",
+      "servedBytes": 10293,
+      "servedSha256": "c0e064583b47e35a039487e9faa795d92eeda975a05a37a5188232d60e8bf485"
+    },
+    "/synth-spu/psf_playback_core.js": {
+      "sourceBytes": 6947,
+      "sourceSha256": "7b595dd1d5912207eb3448ce5f11cb7253aade8fb2d0ab7e7ed476489dd1e471",
+      "servedBytes": 6947,
+      "servedSha256": "7b595dd1d5912207eb3448ce5f11cb7253aade8fb2d0ab7e7ed476489dd1e471"
+    },
+    "/synth-spu/psf_seek_controls.js": {
+      "sourceBytes": 6326,
+      "sourceSha256": "3ff06fc9ab93aaffd0a570add1da016ca816caa4f4461c489c0e3c329fa4fffd",
+      "servedBytes": 6326,
+      "servedSha256": "3ff06fc9ab93aaffd0a570add1da016ca816caa4f4461c489c0e3c329fa4fffd"
+    },
+    "/synth-spu/psf_song_preview.js": {
+      "sourceBytes": 36457,
+      "sourceSha256": "3827843fbc64e4eca7460b9b04a98430b3d9ab2f4597dd8fb2d34f62930088a8",
+      "servedBytes": 36457,
+      "servedSha256": "3827843fbc64e4eca7460b9b04a98430b3d9ab2f4597dd8fb2d34f62930088a8"
+    },
+    "/synth-spu/psf_song_source.js": {
+      "sourceBytes": 944,
+      "sourceSha256": "8c791b04578607840eb0a0ead66fa5984e8b28d3b69ccf6261cccfbe397cd4c4",
+      "servedBytes": 944,
+      "servedSha256": "8c791b04578607840eb0a0ead66fa5984e8b28d3b69ccf6261cccfbe397cd4c4"
+    },
+    "/synth-spu/sample_pcm_editor.js": {
+      "sourceBytes": 14969,
+      "sourceSha256": "f98f8608a6f3457142e0eb721332e4032363f5b6972eeb06ef92471d9ad47048",
+      "servedBytes": 14969,
+      "servedSha256": "f98f8608a6f3457142e0eb721332e4032363f5b6972eeb06ef92471d9ad47048"
+    },
+    "/synth-spu/spu_adpcm_preview.js": {
+      "sourceBytes": 1737,
+      "sourceSha256": "623fd449a51a018b5052e2add5ea7f7448abb2391cb19836d557bacae218dcf7",
+      "servedBytes": 1737,
+      "servedSha256": "623fd449a51a018b5052e2add5ea7f7448abb2391cb19836d557bacae218dcf7"
+    },
+    "/synth-spu/spu_bank_presets.js": {
+      "sourceBytes": 2172,
+      "sourceSha256": "0972273703192c2b84c2eb8728e9902e532aeb2bd3fe11818083c02d9fc30e2d",
+      "servedBytes": 2172,
+      "servedSha256": "0972273703192c2b84c2eb8728e9902e532aeb2bd3fe11818083c02d9fc30e2d"
+    },
+    "/synth-spu/spu_sample_pcm.js": {
+      "sourceBytes": 2084,
+      "sourceSha256": "cb44690faa6eadd469780bc6fc4114ab2d85098b0c3ab95d7da18f5b25d8fa0b",
+      "servedBytes": 2084,
+      "servedSha256": "cb44690faa6eadd469780bc6fc4114ab2d85098b0c3ab95d7da18f5b25d8fa0b"
+    },
+    "/synth-spu/spu_synth_audio.js": {
+      "sourceBytes": 11129,
+      "sourceSha256": "1bbe55e0e061a1f3a41c57a18551e6a093759e9be9217726fe92597c2f861662",
+      "servedBytes": 11129,
+      "servedSha256": "1bbe55e0e061a1f3a41c57a18551e6a093759e9be9217726fe92597c2f861662"
+    },
+    "/synth-spu/spu_synth_instrument.js": {
+      "sourceBytes": 7233,
+      "sourceSha256": "ab9197460279fa580cf83943e563d9078695df0361d2976a5c4fbd4c562f6d6e",
+      "servedBytes": 7233,
+      "servedSha256": "ab9197460279fa580cf83943e563d9078695df0361d2976a5c4fbd4c562f6d6e"
+    },
+    "/synth-spu/spu_synth_levels.js": {
+      "sourceBytes": 349,
+      "sourceSha256": "f1f0a334516c0e849bae120f57d4927977daffa656ce0d49cf9af93169e2a6df",
+      "servedBytes": 349,
+      "servedSha256": "f1f0a334516c0e849bae120f57d4927977daffa656ce0d49cf9af93169e2a6df"
+    },
+    "/synth-spu/spu_synth_long_audio.js": {
+      "sourceBytes": 2545,
+      "sourceSha256": "e74c7336cf5b5364c8529b6caf5b0b0796d7ff80bc093d450d74dceee81adc3a",
+      "servedBytes": 2545,
+      "servedSha256": "e74c7336cf5b5364c8529b6caf5b0b0796d7ff80bc093d450d74dceee81adc3a"
+    },
+    "/synth-spu/spu_synth_morph.js": {
+      "sourceBytes": 1749,
+      "sourceSha256": "15cf1302bb619c39a179620967e8be2cfefd18aaf17c86c262c51ea216971d05",
+      "servedBytes": 1749,
+      "servedSha256": "15cf1302bb619c39a179620967e8be2cfefd18aaf17c86c262c51ea216971d05"
+    },
+    "/synth-spu/spu_synth_noise.js": {
+      "sourceBytes": 686,
+      "sourceSha256": "a0081042773df893dbe3ee4848209530862bfbdd9c791759bbe4cfb6d0887422",
+      "servedBytes": 686,
+      "servedSha256": "a0081042773df893dbe3ee4848209530862bfbdd9c791759bbe4cfb6d0887422"
+    },
+    "/synth-spu/spu_synth_panel.js": {
+      "sourceBytes": 33415,
+      "sourceSha256": "30102507857a03654ad5603be65b3b9876ada8527dde15ca6f2db221fb6115ac",
+      "servedBytes": 33415,
+      "servedSha256": "30102507857a03654ad5603be65b3b9876ada8527dde15ca6f2db221fb6115ac"
+    },
+    "/synth-spu/spu_synth_pmon.js": {
+      "sourceBytes": 2068,
+      "sourceSha256": "2b560db15e4c73ff8a552974980eb9c1160af009434cb072d486733d2db71daa",
+      "servedBytes": 2068,
+      "servedSha256": "2b560db15e4c73ff8a552974980eb9c1160af009434cb072d486733d2db71daa"
+    },
+    "/synth-spu/spu_synth_vab.js": {
+      "sourceBytes": 243,
+      "sourceSha256": "89954e60b9328746410ebb0449300189e37629081456a144ffa5182c2c84b4b4",
+      "servedBytes": 243,
+      "servedSha256": "89954e60b9328746410ebb0449300189e37629081456a144ffa5182c2c84b4b4"
+    },
+    "/synth-spu/spu_synth_visualizer.js": {
+      "sourceBytes": 10421,
+      "sourceSha256": "0e4cba8d283d728579e592b28a87f008165b5d5d00d1cb4956e90b06f84d6b47",
+      "servedBytes": 10421,
+      "servedSha256": "0e4cba8d283d728579e592b28a87f008165b5d5d00d1cb4956e90b06f84d6b47"
+    },
+    "/synth-spu/spu_synth_voices.js": {
+      "sourceBytes": 1829,
+      "sourceSha256": "fa4325f335c5a05bc0fc470d6fca7841a9db5eefd3f4a34bcdb35aaf3dda5698",
+      "servedBytes": 1829,
+      "servedSha256": "fa4325f335c5a05bc0fc470d6fca7841a9db5eefd3f4a34bcdb35aaf3dda5698"
+    },
+    "/synth-spu/synth.css": {
+      "sourceBytes": 36400,
+      "sourceSha256": "0fa7162cd40052abff7515c0eac268369cc3d881151a605b8526e3e73b8a8b0a",
+      "servedBytes": 36400,
+      "servedSha256": "0fa7162cd40052abff7515c0eac268369cc3d881151a605b8526e3e73b8a8b0a"
+    },
+    "/synth-spu/synth.js": {
+      "sourceBytes": 79186,
+      "sourceSha256": "8e7172fd2580d68ffad01926c379591157295b397a3d6fde87a5f0bfa6531004",
+      "servedBytes": 95441,
+      "servedSha256": "3d3a5eda6f375ad529a165382e681720f57c60e9a864128ddc2d82256f56e59d"
+    },
+    "/synth/synth_code_controls.js": {
+      "sourceBytes": 20002,
+      "sourceSha256": "30ee0c7d98b0bad6710f78a3248b63917b34b1bc3fb9b2133448d03c83135f71",
+      "servedBytes": 20002,
+      "servedSha256": "30ee0c7d98b0bad6710f78a3248b63917b34b1bc3fb9b2133448d03c83135f71"
+    },
+    "/synth/synth_code_declarations.js": {
+      "sourceBytes": 7401,
+      "sourceSha256": "c105451789e8a0e8891aa8d78a75c890a80d7c9956e0ca9deb4842321fdf0749",
+      "servedBytes": 7401,
+      "servedSha256": "c105451789e8a0e8891aa8d78a75c890a80d7c9956e0ca9deb4842321fdf0749"
+    },
+    "/synth/synth_code_output.js": {
+      "sourceBytes": 4973,
+      "sourceSha256": "dca6ef03aca997f55fda55684fd6e0aa8dd8beb246c68a59ef8ac85efab4e112",
+      "servedBytes": 4973,
+      "servedSha256": "dca6ef03aca997f55fda55684fd6e0aa8dd8beb246c68a59ef8ac85efab4e112"
+    },
+    "/synth/synth_code_project.js": {
+      "sourceBytes": 1623,
+      "sourceSha256": "7fbc1f8b5df80b2fbbfb4d19fa1f36906563f8762317466102ba19d228d17026",
+      "servedBytes": 1623,
+      "servedSha256": "7fbc1f8b5df80b2fbbfb4d19fa1f36906563f8762317466102ba19d228d17026"
+    },
+    "/synth/synth_keyboard.js": {
+      "sourceBytes": 10010,
+      "sourceSha256": "b7dc1daea64aa6e061bfdb2295010ee24eddaba51ab7ab6cf87c0f751be7c795",
+      "servedBytes": 10010,
+      "servedSha256": "b7dc1daea64aa6e061bfdb2295010ee24eddaba51ab7ab6cf87c0f751be7c795"
+    },
+    "/synth/synth_menu.js": {
+      "sourceBytes": 1808,
+      "sourceSha256": "7f9ee7b7cdf3df52395ddf377af7b9f885751d8661260301cdb271289b7a4c5f",
+      "servedBytes": 1808,
+      "servedSha256": "7f9ee7b7cdf3df52395ddf377af7b9f885751d8661260301cdb271289b7a4c5f"
+    }
+  },
+  "date": "2026-11-12",
+  "scope": "Reuse existing frontend Import/Export menu at title-left, add desktop Audio output/Reload, retain adjacent Pin. Legacy fallback only if no frontend menu exists.",
+  "existingTests": {
+    "python": {
+      "passed": 14
+    },
+    "node": {
+      "passed": 42,
+      "failed": 0
+    },
+    "command": "npm test",
+    "log": "/private/tmp/spu-tauri-unified-menu-node.log"
+  },
+  "rust": {
+    "check": {
+      "command": "cargo check --manifest-path src-tauri/Cargo.toml --locked",
+      "passed": true,
+      "log": "/private/tmp/spu-tauri-unified-menu-cargo.log"
+    },
+    "build": {
+      "command": "CARGO_NET_OFFLINE=true ./node_modules/.bin/tauri build --debug --no-bundle --ci",
+      "passed": true,
+      "log": "/private/tmp/spu-tauri-unified-menu-build.log",
+      "binary": "src-tauri/target/debug/tetorica-spu-synth-tauri",
+      "bytes": 33640232,
+      "embedsExactUpdatedDesktopScript": true,
+      "appLaunched": false,
+      "signedReleaseCreated": false
+    }
+  },
+  "frontend": {
+    "distModified": false,
+    "releaseLockModified": false,
+    "files": 341,
+    "sha256": "74fb9f2285c70e5c46d7271bf6487cb3769550ee80d9292d6dffd117c67e6353",
+    "check": "python3 scripts/import_release.py --check"
+  },
+  "visualReview": {
+    "directory": "/private/tmp/spu-tauri-desktop-menu",
+    "reviewed": [
+      "chromium-desktop-menu.png",
+      "webkit-expanded-640.png"
+    ],
+    "result": "One title-left Menu followed by Pin; all import/export actions retained, desktop audio/reload visible, Code expansion keeps toolbar available."
+  },
+  "commitPushPublication": false
+}

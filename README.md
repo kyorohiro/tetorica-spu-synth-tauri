@@ -16,13 +16,14 @@ npm run dev
 `dist/`に自己完結した配布物を同梱しています。起動時のダウンロードはありません。
 Enable audioを押し、PCキーまたは画面の鍵盤で演奏します。
 
-- **Menu → Import**：SPU presetを読み込みます。
-- **Menu → Export**：`.spu.json`をネイティブの保存ダイアログで書き出します。
+- **Menu → Import**：VAB／VH＋VB、PSFセット／フォルダー、Audio、SPU JSON、Project／Filesを読み込みます。
+- **Menu → Export**：SPU JSON、Project ZIP、選択したファイルをネイティブの保存ダイアログで書き出します。
 - **Pin**：ウィンドウの最前面表示を切り替えます。設定はアプリ起動中だけ保持します。
 - **Menu → Reload**：確認後に画面を再読み込みします。音色を残すには先にpresetを保存してください。
 - **Menu → Audio output**：Web Audio／Native (Rust)を選択します。
 
 タイトル横の丸いMenu／PinはFM2612 Synthと同じ配置・アイコン・操作です。
+Web版のImport／ExportとDesktopのAudio output／Reloadは、このMenuひとつにまとまっています。Codeを拡大してもMenu／Pinを操作できます。
 SPUの明るい配色に合わせています。
 
 音声／VAB／PSFはWebView標準のファイル選択から読み込みます。フォルダー選択の可否は
