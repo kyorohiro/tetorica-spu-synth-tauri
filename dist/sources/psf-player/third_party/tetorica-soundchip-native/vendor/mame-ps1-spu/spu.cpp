@@ -1,0 +1,3316 @@
+// license:BSD-3-Clause
+// copyright-holders:pSXAuthor, R. Belmont
+/*
+
+    Sony PlayStation SPU (CXD2922BQ/CXD2925Q) emulator
+    by pSXAuthor
+    MAME adaptation by R. Belmont
+
+*/
+
+#include "standalone_support.h"
+#include "spu.h"
+#include "spureverb.h"
+
+
+
+
+
+
+#include <algorithm>
+#include <stdexcept>
+
+
+//
+//
+//
+
+//#define warn_if_sweep_used
+// Standalone C API rejects unsupported volume sweeps before reaching this core.
+//#define debug_spu_registers
+//#define debug_spu
+//#define log_loop_cache
+//#define show_xa_debug
+
+//#ifndef _FINAL
+//  #define show_cache_update
+//#endif
+
+#ifdef show_xa_debug
+	#define debug_xa printf
+#else
+	#define debug_xa if (0)
+#endif
+
+// device type definition
+
+
+enum spu_status
+{
+	spustatus_irq=1U<<6,
+	spustatus_dmareq=1U<<7,
+	spustatus_dmawrite=1U<<8,
+	spustatus_dmaread=1U<<9,
+	spustatus_busy=1U<<10,
+	spustatus_decodedata2ndhalf=1U<<11,
+};
+
+enum spu_ctrl
+{
+	spuctrl_cd_audio_enable=1U<<0,
+	spuctrl_ext_audio_enable=1U<<1,
+	spuctrl_cd_audio_reverb_enable=1U<<2,
+	spuctrl_ext_audio_reverb_enable=1U<<3,
+	spuctrl_data=3U<<4,
+	spuctrl_data_piowrite=1U<<4,
+	spuctrl_data_dmawrite=2U<<4,
+	spuctrl_data_dmaread=3U<<4,
+	spuctrl_irq_enable=1U<<6,
+	spuctrl_reverb_enable=1U<<7,
+	spuctrl_noise_shift=8,
+	spuctrl_noise_mask=0x3f<<spuctrl_noise_shift,
+	spuctrl_mute=1U<<14,
+	spuctrl_spu_enable=1U<<15,
+};
+
+enum
+{
+	adpcmflag_loop_end=1,
+	adpcmflag_loop_repeat=2,
+	adpcmflag_loop_start=4
+};
+
+struct adpcm_packet
+{
+	unsigned char info,
+								flags,
+								data[14];
+};
+
+enum adsl_flags
+{
+	adsl_am=0x8000,
+	adsl_ar_shift=8,
+	adsl_ar_mask=0x7f<<adsl_ar_shift,
+	adsl_dr_shift=4,
+	adsl_dr_mask=0xf<<adsl_dr_shift,
+	adsl_sl_mask=0xf
+};
+
+enum srrr_flags
+{
+	srrr_sm=0x8000,
+	srrr_sd=0x4000,
+	srrr_sr_shift=6,
+	srrr_sr_mask=0x7f<<srrr_sr_shift,
+	srrr_rm=0x20,
+	srrr_rr_mask=0x1f
+};
+
+static unsigned int const /*sound_buffer_size=65536*4,*/
+													xa_sector_size=(18*28*8)<<1,
+													xa_buffer_sectors=16,
+													cdda_sector_size=2352,
+													cdda_buffer_sectors=16,
+													num_loop_cache_packets=4,
+													num_loop_cache_samples=num_loop_cache_packets*28,
+													spu_infinity=0xffffffff,
+
+													output_buffer_size=65536/8/*,
+
+													sample_loop_cache_pool_size=64,
+													sample_loop_cache_extend_size=64,
+													sample_cache_pool_size=64,
+													sample_cache_extend_size=64,
+
+													stream_marker_pool_size=64,
+													stream_marker_extend_size=64*/;
+
+//
+//
+//
+
+static int const filter_coef[5][2]=
+{
+	{ 0,0 },
+	{ 60,0 },
+	{ 115,-52 },
+	{ 98,-55 },
+	{ 122,-60 },
+};
+
+//
+//
+//
+
+#ifdef debug_spu_registers
+	#define _voice_registers(_voice)    \
+		"voice"#_voice".voll",      \
+		"voice"#_voice".volr",      \
+		"voice"#_voice".pitch",     \
+		"voice"#_voice".addr",      \
+		"voice"#_voice".adsl",      \
+		"voice"#_voice".srrr",      \
+		"voice"#_voice".curvol",    \
+		"voice"#_voice".repaddr"
+
+	#define _voice_mask_register(_name) \
+		_name##"0-15",                    \
+		_name##"16-23"
+
+	static char const *const spu_register_names[512]=
+	{
+		_voice_registers(0),
+		_voice_registers(1),
+		_voice_registers(2),
+		_voice_registers(3),
+		_voice_registers(4),
+		_voice_registers(5),
+		_voice_registers(6),
+		_voice_registers(7),
+		_voice_registers(8),
+		_voice_registers(9),
+		_voice_registers(10),
+		_voice_registers(11),
+		_voice_registers(12),
+		_voice_registers(13),
+		_voice_registers(14),
+		_voice_registers(15),
+		_voice_registers(16),
+		_voice_registers(17),
+		_voice_registers(18),
+		_voice_registers(19),
+		_voice_registers(20),
+		_voice_registers(21),
+		_voice_registers(22),
+		_voice_registers(23),
+		"mvoll",
+		"mvolr",
+		"rvoll",
+		"rvolr",
+		"keyon0-15", "keyon16-23",
+		"keyoff0-15", "keyoff16-23",
+		"fm0-15", "fm16-23",
+		"noise0-15", "noise16-23",
+		"reverb0-15", "reverb16-23",
+		"chon0-15", "chon16-23",
+		"unknown",
+		"reverbaddr",
+		"irqaddr",
+		"transaddr",
+		"data",
+		"ctrl",
+		"ram_ctrl",
+		"status",
+		"cdvoll",
+		"cdvolr",
+		"exvoll",
+		"exvolr",
+		"curvoll",
+		"curvolr"
+	};
+
+	const char *get_register_name(const unsigned int addr)
+	{
+		return spu_register_names[(addr&0x3ff)>>1];
+	}
+#endif
+
+//**************************************************************************
+//  GLOBAL VARIABLES
+//**************************************************************************
+
+
+
+
+
+//**************************************************************************
+//  DEVICE CONFIGURATION
+//**************************************************************************
+
+class adpcm_decoder
+{
+	int l0,l1;
+
+public:
+	adpcm_decoder()
+	{
+		reset();
+	}
+
+	adpcm_decoder(const adpcm_decoder &other)
+	{
+		operator =(other);
+	}
+
+	adpcm_decoder &operator =(const adpcm_decoder &other)
+	{
+		l0=other.l0;
+		l1=other.l1;
+		return *this;
+	}
+
+	void reset()
+	{
+		l0=l1=0;
+	}
+
+	signed short *decode_packet(adpcm_packet *ap, signed short *dp);
+};
+
+//
+//
+//
+
+struct spu_device::sample_cache
+{
+public:
+	unsigned int start,
+					end,
+					invalid_start,
+					invalid_end,
+					loopaddr,
+					last_update_end;
+	std::unique_ptr<signed short []> data;
+	signed short *loop,*dend;
+	adpcm_decoder decoder, update_decoder;
+	mutable int ref_count;
+	bool valid,
+				is_loop;
+	bool host_pcm = false;
+	sample_loop_cache *loop_cache;
+
+
+	spu_device *spu;
+
+	sample_cache(spu_device *_spu)
+		:   invalid_start(0xffffffff),
+			invalid_end(0),
+			last_update_end(0xffffffff),
+			data(nullptr),
+			ref_count(0),
+			valid(false),
+			is_loop(false),
+			loop_cache(nullptr),
+			spu(_spu)
+	{
+	}
+
+	~sample_cache();
+
+	void add_ref() const { ref_count++; }
+	void remove_ref() const
+	{
+		ref_count--;
+		if (ref_count==0)
+		{
+
+			delete this;
+		}
+	}
+
+	signed short *get_sample_pointer(const unsigned int addr);
+	bool get_sample_pointer(const unsigned int addr, cache_pointer *cp);
+	bool get_loop_pointer(cache_pointer *cp);
+	unsigned int get_sample_address(const signed short *ptr) const;
+	sample_loop_cache *find_loop_cache(const unsigned int lpend, const unsigned int lpstart);
+	void add_loop_cache(sample_loop_cache *lc);
+
+	bool is_valid_pointer(signed short *ptr) const;
+
+	bool try_update(spu_device *spu);
+};
+
+
+
+//
+//
+//
+
+struct spu_device::sample_loop_cache
+{
+public:
+	unsigned int loopend,
+								loopstart,
+								len;
+	// A fourteen-bit pitch can form a cursor up to three samples past the
+	// logical end before process_voice resolves overshoot at the next cache.
+	signed short data[num_loop_cache_samples+4];
+	sample_loop_cache *next;
+
+	sample_loop_cache()
+		:   next(nullptr)
+	{
+
+	}
+
+	~sample_loop_cache()
+	{
+
+
+		#ifdef log_loop_cache
+			log(log_spu,"spu: destroy loop cache %08x\n",this);
+		#endif
+	}
+};
+
+//
+//
+//
+
+struct spu_device::cache_pointer
+{
+	signed short *ptr;
+	sample_cache *cache;
+
+	cache_pointer() : ptr(nullptr), cache(nullptr)
+	{
+	}
+
+	cache_pointer(const cache_pointer &other) : cache_pointer()
+	{
+		operator=(other);
+	}
+
+	cache_pointer(signed short *_ptr, sample_cache *_cache) : ptr(_ptr), cache(_cache)
+	{
+		if (cache)
+			cache->add_ref();
+	}
+
+	~cache_pointer()
+	{
+		reset();
+	}
+
+	void reset();
+	cache_pointer &operator=(const cache_pointer &other);
+	bool update(spu_device *spu);
+
+	unsigned int get_address() const
+	{
+		if (cache)
+			return cache->get_sample_address(ptr);
+		else
+			return -1;
+	}
+
+	operator bool() const { return cache!=nullptr; }
+
+	bool is_valid() const { return cache && cache->is_valid_pointer(ptr); }
+};
+
+//
+//
+//
+
+// PSX hardware coefficients documented by no$psx / PSX-SPX:
+// https://psx-spx.consoledev.net/soundprocessingunitspu/#4-point-gaussian-interpolation
+// Numeric hardware data; no implementation code copied from another emulator.
+static constexpr int16_t psx_gauss[512] = {
+	-1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1,
+	0, 0, 0, 0, 0, 0, 0, 1,
+	1, 1, 1, 2, 2, 2, 3, 3,
+	3, 4, 4, 5, 5, 6, 7, 7,
+	8, 9, 9, 10, 11, 12, 13, 14,
+	15, 16, 17, 18, 19, 21, 22, 24,
+	25, 27, 28, 30, 32, 33, 35, 37,
+	39, 41, 44, 46, 48, 51, 53, 56,
+	58, 61, 64, 67, 70, 73, 77, 80,
+	84, 87, 91, 95, 99, 103, 107, 111,
+	116, 120, 125, 130, 135, 140, 145, 150,
+	156, 161, 167, 173, 179, 186, 192, 199,
+	205, 212, 219, 227, 234, 242, 250, 257,
+	266, 274, 283, 291, 300, 309, 319, 328,
+	338, 348, 358, 369, 379, 390, 401, 412,
+	424, 436, 448, 460, 473, 485, 498, 512,
+	525, 539, 553, 567, 582, 597, 612, 627,
+	643, 659, 675, 692, 708, 726, 743, 761,
+	779, 797, 816, 835, 854, 874, 894, 914,
+	935, 956, 977, 999, 1020, 1043, 1066, 1089,
+	1112, 1136, 1160, 1184, 1209, 1234, 1260, 1286,
+	1312, 1339, 1366, 1394, 1422, 1450, 1479, 1508,
+	1537, 1567, 1598, 1628, 1660, 1691, 1723, 1756,
+	1789, 1822, 1856, 1890, 1924, 1959, 1995, 2031,
+	2067, 2104, 2141, 2179, 2217, 2256, 2295, 2334,
+	2374, 2415, 2456, 2497, 2539, 2582, 2624, 2668,
+	2712, 2756, 2801, 2846, 2892, 2938, 2985, 3032,
+	3079, 3128, 3176, 3225, 3275, 3325, 3376, 3427,
+	3479, 3531, 3584, 3637, 3691, 3745, 3799, 3855,
+	3910, 3967, 4023, 4081, 4138, 4197, 4255, 4315,
+	4374, 4435, 4495, 4557, 4619, 4681, 4744, 4807,
+	4871, 4935, 5000, 5065, 5131, 5197, 5264, 5332,
+	5399, 5468, 5536, 5606, 5676, 5746, 5817, 5888,
+	5959, 6032, 6104, 6177, 6251, 6325, 6400, 6475,
+	6550, 6626, 6702, 6779, 6856, 6934, 7012, 7091,
+	7170, 7249, 7329, 7409, 7490, 7571, 7653, 7735,
+	7817, 7900, 7983, 8066, 8150, 8234, 8319, 8404,
+	8489, 8575, 8661, 8748, 8834, 8922, 9009, 9097,
+	9185, 9273, 9362, 9451, 9541, 9630, 9720, 9811,
+	9901, 9992, 10083, 10174, 10266, 10358, 10450, 10542,
+	10635, 10727, 10820, 10913, 11007, 11100, 11194, 11288,
+	11382, 11476, 11571, 11665, 11760, 11855, 11950, 12045,
+	12140, 12236, 12331, 12427, 12522, 12618, 12714, 12809,
+	12905, 13001, 13097, 13193, 13289, 13385, 13481, 13577,
+	13673, 13769, 13865, 13961, 14056, 14152, 14248, 14343,
+	14439, 14534, 14630, 14725, 14820, 14915, 15010, 15104,
+	15199, 15293, 15387, 15481, 15575, 15669, 15762, 15855,
+	15948, 16041, 16133, 16226, 16317, 16409, 16500, 16592,
+	16682, 16773, 16863, 16953, 17042, 17131, 17220, 17308,
+	17396, 17484, 17571, 17658, 17744, 17830, 17916, 18001,
+	18086, 18170, 18254, 18337, 18420, 18502, 18584, 18665,
+	18746, 18826, 18905, 18985, 19063, 19141, 19219, 19295,
+	19372, 19447, 19522, 19597, 19671, 19744, 19816, 19888,
+	19959, 20030, 20100, 20169, 20238, 20306, 20373, 20439,
+	20505, 20570, 20634, 20698, 20760, 20822, 20884, 20944,
+	21004, 21063, 21121, 21178, 21235, 21290, 21345, 21399,
+	21452, 21505, 21556, 21607, 21657, 21706, 21754, 21801,
+	21848, 21893, 21938, 21982, 22025, 22066, 22107, 22148,
+	22187, 22225, 22262, 22299, 22334, 22369, 22402, 22435,
+	22467, 22498, 22527, 22556, 22584, 22611, 22637, 22662,
+	22686, 22709, 22731, 22752, 22772, 22791, 22809, 22826,
+	22842, 22857, 22872, 22885, 22897, 22908, 22918, 22927,
+	22935, 22942, 22948, 22953, 22957, 22960, 22962, 22963,
+};
+
+// Floor each signed product separately, including negative sub-LSB values.
+static int gauss_product(int coefficient, int sample)
+{
+	const int product=coefficient*sample;
+	return product>=0 ? product/32768 : -((-product+32767)/32768);
+}
+
+struct spu_device::voiceinfo
+{
+	cache_pointer play, loop;
+	// Own the decoded loop-cache storage even while loop target is rebuilt.
+	cache_pointer loop_cache_owner;
+	sample_loop_cache *loop_cache = nullptr;
+	unsigned int dptr = 0, lcptr = 0;
+	int16_t gaussian_history[3] = {0, 0, 0}; // oldest, older, old
+	unsigned int gaussian_pending = 0; // skipped frames across a cache boundary
+	void gaussian_push(int16_t sample)
+	{
+		gaussian_history[0]=gaussian_history[1];
+		gaussian_history[1]=gaussian_history[2];
+		gaussian_history[2]=sample;
+	}
+
+	int env_state = 0;
+	float env_ar = 0.0F,
+				env_dr = 0.0F,
+				env_sr = 0.0F,
+				env_rr = 0.0F,
+				env_sl = 0.0F,
+				env_level = 0.0F,
+				env_delta = 0.0F,
+
+				//>>
+				sweep_vol[2] = { 0.0F, 0.0F },
+				sweep_rate[2] = { 0.0F, 0.0F };
+				//<<
+
+	unsigned int pitch = 0,
+								samplestoend = 0,
+								samplestoirq = 0,
+								envsamples = 0;
+	bool hitirq = false,
+				inloopcache = false,
+				forceloop = false,
+				_pad = false;
+	int64_t keyontime = 0;
+	// Editor-only gate; the raw register path stays at unity.
+	float audition_gain = 1.0f, audition_delta = 0.0f;
+	float audition_release_floor = 0.0f;
+	unsigned int audition_samples = 0;
+	bool audition_restart = false;
+	void advance_audition_gain()
+	{
+		if (audition_samples)
+		{
+			audition_gain += audition_delta;
+			if (!--audition_samples)
+				audition_gain = audition_restart ? 0.0f : 1.0f;
+		}
+	}
+};
+
+//
+//
+//
+
+class spu_stream_buffer
+{
+public:
+	struct stream_marker
+	{
+	public:
+		unsigned int sector,
+									offset;
+		stream_marker *next,
+									*prev;
+	};
+
+	std::vector<uint8_t> buffer;
+	unsigned int head,
+								tail,
+								in,
+								sector_size,
+								num_sectors,
+								buffer_size;
+	stream_marker *marker_head,
+								*marker_tail;
+
+	spu_stream_buffer(const unsigned int _sector_size,
+								const unsigned int _num_sectors)
+		:   head(0),
+			tail(0),
+			in(0),
+			sector_size(_sector_size),
+			num_sectors(_num_sectors),
+			marker_head(nullptr),
+			marker_tail(nullptr)
+	{
+		buffer_size=sector_size*num_sectors;
+		buffer.resize(buffer_size);
+		memset(&buffer[0], 0, buffer_size);
+	}
+
+	~spu_stream_buffer()
+	{
+		flush_all();
+	}
+
+	unsigned char *add_sector(const unsigned int sector)
+	{
+		auto xam=new stream_marker;
+		xam->sector=sector;
+		xam->offset=head;
+		xam->next=nullptr;
+		xam->prev=marker_tail;
+		if (marker_tail)
+		{
+			marker_tail->next=xam;
+		} else
+		{
+			marker_head=xam;
+		}
+		marker_tail=xam;
+
+		unsigned char *ret=&buffer[head];
+		head=(head+sector_size)%buffer_size;
+		in+=sector_size;
+		return ret;
+	}
+
+	void flush(const unsigned int sector)
+	{
+		// Remove markers from the end of the buffer if they are after
+		// the specified sector
+
+		while ((marker_tail) && (marker_tail->sector>=sector))
+		{
+//          debug_xa("flushing: %d\n", marker_tail->sector);
+
+			stream_marker *xam=marker_tail;
+			head=xam->offset;
+			marker_tail=xam->prev;
+			if (marker_tail) marker_tail->next=nullptr;
+			delete xam;
+		}
+
+		// Set marker head to nullptr if the list is now empty
+
+		if (! marker_tail) marker_head=nullptr;
+
+		// Adjust buffer size counter
+
+		int sz=(head-tail);
+		if (sz<0) sz+=buffer_size;
+		assert(sz<=(int)in);
+		in=sz;
+	}
+
+	void flush_all()
+	{
+		// NOTE: ??what happens to the markers??
+
+		while (marker_head)
+		{
+			stream_marker *m=marker_head;
+			marker_head=marker_head->next;
+			delete m;
+		}
+
+		marker_head=marker_tail=nullptr;
+		head=tail=in=0;
+	}
+
+	void delete_markers(const unsigned int oldtail)
+	{
+		while (marker_head)
+		{
+			int olddist=marker_head->offset-oldtail,
+					dist=marker_head->offset-tail;
+			if (olddist<0) olddist+=buffer_size;
+			if (dist<0) dist+=buffer_size;
+			bool passed=(((olddist==0) && (dist!=0)) || (dist>olddist));
+			if (! passed) break;
+
+//          debug_xa("passed: %d\n",marker_head->sector);
+
+			stream_marker *xam=marker_head;
+			marker_head=xam->next;
+			delete xam;
+			if (marker_head) marker_head->prev=nullptr;
+		}
+
+		if (! marker_head) marker_head=marker_tail=nullptr;
+	}
+
+	unsigned int get_bytes_in() const { return in; }
+	unsigned int get_bytes_free() const { return buffer_size-in; }
+
+	unsigned char *get_tail_ptr() { return &buffer[tail]; }
+	unsigned char *get_tail_ptr(const unsigned int offset)
+	{
+		return &buffer[((tail+offset)%buffer_size)];
+	}
+	unsigned int get_tail_offset() const { return tail; }
+	void increment_tail(const unsigned int offset)
+	{
+		tail=(tail+offset)%buffer_size;
+		in-=offset;
+	}
+};
+
+//
+//
+//
+
+static inline int clamp(const int v)
+{
+	if (v<-32768) return -32768;
+	if (v>32767) return 32767;
+	return v;
+}
+
+//
+//
+//
+
+spu_device::sample_cache::~sample_cache()
+{
+	data.reset();
+	while (loop_cache)
+	{
+		sample_loop_cache *lc=loop_cache;
+		loop_cache=lc->next;
+		delete lc;
+	}
+}
+
+//
+//
+//
+
+signed short *spu_device::sample_cache::get_sample_pointer(const unsigned int addr)
+{
+	if ((addr>=start) && (addr<end))
+	{
+		return &data[((addr-start)>>spu->m_counter_packet_shift)*28];
+	} else
+	{
+		return nullptr;
+	}
+}
+
+//
+//
+//
+
+bool spu_device::sample_cache::get_sample_pointer(const unsigned int addr, cache_pointer *cp)
+{
+	cp->reset();
+	if ((cp->ptr=get_sample_pointer(addr)))
+	{
+		cp->cache=this;
+		add_ref();
+		return true;
+	}
+	return false;
+}
+
+//
+//
+//
+
+bool spu_device::sample_cache::get_loop_pointer(cache_pointer *cp)
+{
+	cp->reset();
+	if ((cp->ptr=loop))
+	{
+		cp->cache=this;
+		add_ref();
+		return true;
+	}
+	return false;
+}
+
+//
+//
+//
+
+unsigned int spu_device::sample_cache::get_sample_address(const signed short *ptr) const
+{
+	if ((ptr>=data.get()) && (ptr<=dend))
+	{
+		return start+(((ptr-data.get())/28)<<spu->m_counter_packet_shift);
+	} else
+	{
+		return -1;
+	}
+}
+
+//
+//
+//
+
+spu_device::sample_loop_cache *spu_device::sample_cache::find_loop_cache(const unsigned int lpend, const unsigned int lpstart)
+{
+	sample_loop_cache *lc;
+	for (lc=loop_cache; lc; lc=lc->next)
+		if ((lc->loopend==lpend) && (lc->loopstart==lpstart)) break;
+	return lc;
+}
+
+//
+//
+//
+
+void spu_device::sample_cache::add_loop_cache(sample_loop_cache *lc)
+{
+	lc->next=loop_cache;
+	loop_cache=lc;
+}
+
+//
+//
+//
+
+bool spu_device::sample_cache::is_valid_pointer(signed short *ptr) const
+{
+	if ((ptr>=data.get()) && (data.get()<=dend)) return true;
+	for (sample_loop_cache *slc=loop_cache; slc; slc=slc->next)
+		if ((ptr>=slc->data) && (ptr<(slc->data+num_loop_cache_samples)))
+			return true;
+	return false;
+}
+
+//
+//
+//
+
+bool spu_device::sample_cache::try_update(spu_device *spu)
+{
+	if ((invalid_start>=start) && (invalid_end<=end))
+	{
+		unsigned int a;
+		unsigned int loop=0;
+		bool has_loop=false;
+
+		for (a=start; a<=end; a+=spu->m_counter_packet_next)
+		{
+			adpcm_packet *ap = (adpcm_packet *)spu->packet_read(a);
+			if (ap->flags&adpcmflag_loop_start) { loop=a&(0xffff<<spu->m_counter_shift); has_loop=true; }
+			if (ap->flags&adpcmflag_loop_end || !spu->m_counter_packet_next) break;
+		}
+
+		if ((a==(end-spu->m_counter_packet_next)) && (has_loop==(this->loop!=nullptr)) && (loop==loopaddr))
+		{
+			// Repeat belongs to the END packet, independently of the marker.
+			// An upload can change END+Repeat to END+Mute without moving it.
+			is_loop=(((adpcm_packet *)spu->packet_read(a))->flags&adpcmflag_loop_repeat)!=0;
+			#ifdef show_cache_update
+				printf("updating %p: ",this);
+			#endif
+
+			if (invalid_start==start)
+			{
+				#ifdef show_cache_update
+					printf("using end values");
+				#endif
+
+				update_decoder=decoder;
+			} else
+			if (invalid_start!=last_update_end)
+			{
+				#ifdef show_cache_update
+					printf("resetting decoder (istrt=%08x lupd=%08x)",invalid_start,last_update_end);
+				#endif
+
+				update_decoder.reset();
+			}
+			#ifdef show_cache_update
+				printf("\n");
+			#endif
+
+			signed short *dp=&data[((invalid_start-start)>>spu->m_counter_packet_shift)*28];
+			for (a=invalid_start; a<invalid_end; a+=spu->m_counter_packet_next)
+			{
+				adpcm_packet *ap = (adpcm_packet *)spu->packet_read(a);
+				dp=update_decoder.decode_packet(ap,dp);
+				if (!spu->m_counter_packet_next) break;
+			}
+
+			if (invalid_end==end)
+			{
+				#ifdef show_cache_update
+					printf("updating end values\n");
+				#endif
+				decoder=update_decoder;
+			}
+			last_update_end=invalid_end;
+
+			for (sample_loop_cache *lc=loop_cache; lc; lc=lc->next)
+			{
+				if (invalid_start==lc->loopstart)
+				{
+					adpcm_decoder tmp=decoder;
+					dp=lc->data;
+					signed short *dpend=dp+lc->len;
+					unsigned int adr=lc->loopstart;
+					for (unsigned int i=0; ((i<num_loop_cache_packets) && (dp<dpend)); i++, adr+=spu->m_counter_packet_next)
+						dp=tmp.decode_packet((adpcm_packet *)spu->packet_read(adr),dp);
+				}
+			}
+
+			invalid_end=0;
+			invalid_start=0xffffffff;
+			valid=true;
+
+			for (a=start; a<end; a+=spu->m_counter_packet_next?spu->m_counter_packet_next:8)
+			{
+				spu->cache[a>>3]=this;
+			}
+
+			add_ref();
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+//
+//
+//
+
+void spu_device::cache_pointer::reset()
+{
+	if (cache)
+	{
+		ptr=nullptr;
+		cache->remove_ref();
+		cache=nullptr;
+	}
+}
+
+//
+//
+//
+
+spu_device::cache_pointer &spu_device::cache_pointer::operator =(const cache_pointer &other)
+{
+	if (cache) cache->remove_ref();
+	ptr=other.ptr;
+	cache=other.cache;
+	if (cache) cache->add_ref();
+	return *this;
+}
+
+//
+//
+//
+
+bool spu_device::cache_pointer::update(spu_device *spu)
+{
+	if ((cache) && (! cache->valid))
+	{
+/*      log(log_spu,"cache_pointer::update: block %08x-%08x invalidated %08x-%08x\n",
+                                cache->start,
+                                cache->end,
+                                cache->invalid_start,
+                                cache->invalid_end);*/
+
+		if (! cache->try_update(spu))
+		{
+			// Cache is invalid, calculate play address offset from start of
+			// old cache block
+
+			unsigned int off=ptr-cache->data.get(),
+										addr=cache->start;
+
+			// Release cache block and get updated one
+
+			spu->translate_sample_addr(addr,this);
+
+			// Calculate play address in new cache block
+
+			ptr=&cache->data[off];
+
+			if (ptr>=cache->dend)
+			{
+				// Play address is out of bounds in new cache block, release it and get a
+				// new one starting at the current play address
+
+				spu->translate_sample_addr(addr+((off/28)<<spu->m_counter_packet_shift),this);
+			}
+		}
+	}
+
+	// Return false if we do not have a cache block or the play address is invalid
+
+	if ((cache) && ((ptr>=cache->data.get()) && (ptr<cache->dend)))
+	{
+		return true;
+	} else
+	{
+		reset();
+		return false;
+	}
+}
+
+//
+//
+//
+
+signed short *adpcm_decoder::decode_packet(adpcm_packet *ap, signed short *dp)
+{
+	int shift=ap->info&0xf,
+			filter=((ap->info>>4)<5) ? (ap->info>>4) : 0, // Invalid headers cannot index beyond the five filters.
+			f0=filter_coef[filter][0],
+			f1=filter_coef[filter][1];
+
+	for (int i=0; i<14; i++)
+	{
+		unsigned char b=ap->data[i];
+		short bl=(b&0xf)<<12,
+					bh=(b>>4)<<12;
+
+		bl=(bl>>shift)+(((l0*f0)+(l1*f1)+32)>>6);
+		*dp++=bl;
+		l1=l0;
+		l0=bl;
+
+		bh=(bh>>shift)+(((l0*f0)+(l1*f1)+32)>>6);
+		*dp++=bh;
+		l1=l0;
+		l0=bh;
+	}
+
+	return dp;
+}
+
+//
+//
+//
+
+static int shift_register15(int &shift)
+{
+	int bit0, bit1, bit14;
+
+	bit0 = shift & 1;
+	bit1 = (shift & 2) >> 1;
+	bit14 = (bit0 ^ bit1) ^ 1;
+	shift >>= 1;
+	shift |= (bit14 << 14);
+	return bit0;
+}
+
+//
+//
+//
+
+//-------------------------------------------------
+//  spu_device - constructor
+//-------------------------------------------------
+
+spu_device::spu_device() : dirty_flags(-1), status_enabled(false)
+{
+	try
+	{
+		device_start();
+		device_reset();
+	}
+	catch (...)
+	{
+		// A partially constructed core must not leak its raw upstream owners.
+		if (cache) invalidate_cache(0, m_counter_size);
+		delete rev;
+		delete xa_buffer;
+		delete cdda_buffer;
+		delete[] voice;
+		throw;
+	}
+}
+
+spu_device::~spu_device()
+{
+	device_stop();
+}
+
+void spu_device::device_start()
+{
+
+
+	spu_base_frequency_hz = 44100.0f;
+	generate_linear_rate_table();
+	generate_pos_exp_rate_table();
+	generate_neg_exp_rate_table();
+	generate_decay_rate_table();
+	generate_linear_release_rate_table();
+	generate_exp_release_rate_table();
+
+	voice = new voiceinfo [24];
+
+	xa_buffer = new spu_stream_buffer(xa_sector_size, xa_buffer_sectors);
+	cdda_buffer = new spu_stream_buffer(cdda_sector_size, cdda_buffer_sectors);
+
+	init_stream();
+
+	cache=std::make_unique<sample_cache * []>(m_counter_size>>3);
+
+}
+
+void spu_device::device_reset()
+{
+	// Allocate first so an allocation failure leaves the live core usable.
+	auto replacement_reverb = std::make_unique<reverb>(44100);
+	// Release cache references before deterministic register/voice reset.
+	invalidate_cache(0, m_counter_size);
+	delete rev;
+	rev = replacement_reverb.release();
+	spu_reverb_cfg = nullptr;
+	xa_buffer->flush_all();
+	cdda_buffer->flush_all();
+	m_voice_active = 0;
+	taddr = 0;
+	m_decoded_data_remaining.fill(0);
+	m_fifo.fill(0);
+	m_packet.fill(0);
+
+	cur_reverb_preset = nullptr;
+	cur_frame_sample = 0;
+	cur_generate_sample = 0;
+
+
+
+	status_enabled = false;
+	dirty_flags = -1;
+
+	xa_cnt=0;
+	xa_freq=0;
+	xa_channels=2;
+	xa_spf=0;
+	xa_playing=false;
+	memset(xa_last,0,sizeof(xa_last));
+
+	cdda_cnt=0;
+	cdda_playing=false;
+	m_decoded_data_ptr.fill(0);
+	m_fifo_ptr=0;
+
+	std::fill_n(&reg[0], sizeof(reg), 0);
+	std::fill_n(spureg._unknown4, sizeof(spureg._unknown4)/sizeof(unsigned short), 0xff);
+	std::fill_n(voice, 24, voiceinfo());
+
+	spureg.status=0;
+
+	std::fill_n(cache.get(), m_counter_size>>3, nullptr);
+
+	m_counter_packet_next=0;
+	spureg.ram_ctrl=0x0004; // Standard 512 KiB physical RAM mapping.
+	update_ram_ctrl();
+
+	for (auto & elem : output_buf)
+		if (!elem) elem=std::make_unique<unsigned char []>(output_buffer_size);
+	output_head=output_tail=output_size=0;
+	for (auto &mix : host_mix_buf) mix.fill(0);
+	host_mix_correction.fill(0);
+
+	noise_t=0;
+	noise_seed=12345;
+	noise_cur=shift_register15(noise_seed)?0x7fff:0x8000;
+}
+
+void spu_device::device_stop()
+{
+	for (auto & elem : output_buf)
+		elem.reset();
+
+	kill_stream();
+
+	invalidate_cache(0, m_counter_size);
+	cache.reset();
+	delete xa_buffer;
+	delete cdda_buffer;
+	delete[] voice;
+	for(auto *&sample:host_samples)if(sample){sample->remove_ref();sample=nullptr;}
+}
+//
+//
+//
+
+void spu_device::init_stream()
+{
+	const unsigned int hz=44100;
+
+	// TODO: Rewrite SPU stream update code to work such that Taiko no Tatsujin no longer needs synchronous streams
+// Pull-based standalone caller provides the fixed 44,100 Hz output stream.
+
+	rev=new reverb(hz);
+
+	cdda_freq=(unsigned int)((44100.0f/(float)hz)*4096.0f);
+	freq_multiplier=spu_base_frequency_hz/(float)hz;
+}
+
+//
+//
+//
+
+void spu_device::kill_stream()
+{
+	delete rev;
+	rev=nullptr;
+}
+
+//
+//
+//
+
+void spu_device::reinit_sound()
+{
+	kill_stream();
+	init_stream();
+	flush_output_buffer();
+	dirty_flags|=dirtyflag_voice_mask;
+}
+
+//
+//
+//
+
+void spu_device::kill_sound()
+{
+	kill_stream();
+}
+
+//
+//
+//
+
+uint16_t spu_device::read(uint32_t offset)
+{
+	unsigned short ret, *rp=(unsigned short *)(reg+((offset*2)&0x3ff));
+
+
+
+	ret=*rp;
+
+	if (rp==&spureg.status && (m_decoded_data_ptr[0]&(m_decoded_data_size>>1)))
+		ret|=spustatus_decodedata2ndhalf;
+
+	#ifdef debug_spu_registers
+		printf("spu: read word %08x = %04x [%s]\n",
+													offset*2,
+													ret,
+													get_register_name(offset*2));
+	#endif
+
+	return ret;
+}
+
+//
+//
+//
+
+void spu_device::write(uint32_t offset, uint16_t data)
+{
+	#ifdef debug_spu_registers
+		printf("spu: write %08x = %04x [%s]\n",
+													offset*2,
+													data,
+													get_register_name(offset*2));
+	#endif
+
+	const unsigned int a=(offset*2)&0x3ff;
+	unsigned short *rp=(unsigned short *)(reg+a);
+
+	if (rp!=&spureg.status && rp<&spureg._unknown4[0])
+	{
+	
+
+		if (rp<(unsigned short*)&spureg.voice[24])
+		{
+			unsigned int v=(a>>4),r=(a&0xf);
+			if (r==0xe)
+			{
+				voice[v].forceloop=true;
+			}
+
+			dirty_flags|=(1<<v);
+		}
+		else if ((rp==&spureg.irq_addr && (rp[0]^data)) ||
+			(rp==&spureg.ctrl && ((rp[0]^data)&spuctrl_irq_enable)))
+			dirty_flags|=dirtyflag_irq;
+		else if (rp>=&spureg.reverbconfig[0x00] && rp<&spureg.reverbconfig[0x20] && (rp[0]^data))
+			dirty_flags|=dirtyflag_reverb;
+
+		*rp=data;
+
+		if (rp==&spureg.data)
+		{
+			if (m_fifo_ptr < m_fifo.size())
+				m_fifo[m_fifo_ptr++] = data;
+		}
+		else if (rp==&spureg.trans_addr)
+			taddr=data<<m_counter_shift;
+		else if (rp==&spureg.ctrl)
+		{
+			spureg.status=(data&0x3f)|(spureg.status&~(0x3f|spustatus_dmareq|spustatus_dmawrite|spustatus_dmaread));
+
+			if ((data&spuctrl_data)==spuctrl_data_piowrite)
+				write_fifo();
+			else if ((data&spuctrl_data)==spuctrl_data_dmawrite)
+			{
+				spureg.status|=spustatus_dmareq|spustatus_dmawrite;
+				m_fifo_ptr=0;
+			}
+			else if ((data&spuctrl_data)==spuctrl_data_dmaread)
+			{
+				spureg.status|=spustatus_dmareq|spustatus_dmaread;
+				m_fifo_ptr=0;
+			}
+
+			if ((spureg.status&spustatus_irq) && !(data&spuctrl_irq_enable))
+			{
+				spureg.status&=~spustatus_irq;
+				m_irq_cb(1);
+			}
+		}
+		else if (rp==&spureg.ram_ctrl)
+			update_ram_ctrl();
+
+		update_key();
+		update_vol(a);
+		update_voice_state();
+		update_irq_event();
+	}
+}
+
+//
+//
+//
+
+void spu_device::update_vol(const unsigned int addr)
+{
+	if (addr<0x180)
+	{
+		unsigned int ch=(addr&0xf)>>1;
+		if (ch<2)
+		{
+			unsigned int v=addr>>4;
+			unsigned short newval=*(unsigned short *)(reg+addr);
+
+			if (newval&0x8000)
+			{
+				#if 0
+				printf("cur=%04x on=%d",spureg.volumex[v][ch],(m_voice_active>>ch)&1);
+				switch ((newval>>13)&3)
+				{
+					case 0: printf("linear inc: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+					case 1: printf("linear dec: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+					case 2: printf("exp inc: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+					case 3: printf("exp dec: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+				}
+				#endif
+			}
+			else
+			{
+				spureg.volumex[v][ch]=newval*2;
+			}
+		}
+	}
+	else if (addr<0x184)
+	{
+		unsigned short newval=*(unsigned short*)(reg+addr);
+		if (newval&0x8000)
+		{
+#if 0
+			printf("cur=%04x",spureg.mvolx[ch]);
+			switch ((newval>>13)&3)
+			{
+				case 0: printf("linear inc: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+				case 1: printf("linear dec: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+				case 2: printf("exp inc: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+				case 3: printf("exp dec: phase=%d val=%02x\n",(newval>>12)&1,newval&0x7f); break;
+			}
+#endif
+		}
+		else
+		{
+			unsigned int ch=(addr&0x2)>>1;
+			spureg.mvolx[ch]=newval*2;
+		}
+	}
+}
+
+//
+//
+//
+
+void spu_device::write_fifo()
+{
+	#ifdef debug_spu_registers
+		printf("spu: write fifo %04x\n",data);
+	#endif
+
+	assert(taddr<m_counter_size);
+	uint32_t st=taddr;
+
+	for (int i=0; i<m_fifo_ptr; i++, taddr=(taddr+m_counter_word_next)&(m_counter_size-1))
+		ram_write(taddr, m_fifo[i]);
+
+	invalidate_cache(st, taddr);
+	dirty_flags|=dirtyflag_ram;
+	m_fifo_ptr=0;
+}
+
+//
+//
+//
+
+uint16_t *spu_device::packet_read(uint32_t address)
+{
+	// Cache refresh may probe exactly one packet past the physical RAM end.
+	address &= (m_counter_size - 1);
+	for (int i=0; i<8; i++, address=(address+m_counter_word_next)&(m_counter_size-1))
+		m_packet[i]=ram_read(address);
+
+	return &m_packet[0];
+}
+
+//
+//
+//
+
+uint16_t spu_device::ram_read(uint32_t address)
+{
+	uint16_t data=0xffff;
+	if (m_counter_word_next==1)
+	{
+		if (!(m_ram_shift&1) || !((address>>0)&1))
+			data&=m_spu_ram[(((address>>(m_ram_shift&2))&~1)|((address>>0)&1))>>(m_ram_shift&1)];
+	}
+	else if (m_counter_word_next==4)
+	{
+		if (!(m_ram_shift&1) || !((address>>2)&1))
+			data&=m_spu_ram[(((address>>(m_ram_shift&2))&~1)|((address>>2)&1))>>(m_ram_shift&1)];
+	}
+	else
+	{
+		data&=m_spu_ram[((address>>(m_ram_shift&2))&~1)>>(m_ram_shift&1)];
+		if (!(m_ram_shift&1))
+			data&=m_spu_ram[(address>>(m_ram_shift&2))|1]; // bus collision
+	}
+
+	return data;
+}
+
+//
+//
+//
+
+void spu_device::ram_write(uint32_t address, const uint16_t data)
+{
+	if (m_counter_word_next==1)
+	{
+		if (!(m_ram_shift&1) || !((address>>0)&1))
+			m_spu_ram[(((address>>(m_ram_shift&2))&~1)|((address>>0)&1))>>(m_ram_shift&1)] = data;
+	}
+	else if (m_counter_word_next==4)
+	{
+		if (!(m_ram_shift&1) || !((address>>2)&1))
+			m_spu_ram[(((address>>(m_ram_shift&2))&~1)|((address>>2)&1))>>(m_ram_shift&1)] = data;
+	}
+	else
+	{
+		m_spu_ram[((address>>(m_ram_shift&2))&~1)>>(m_ram_shift&1)] = data;
+		if (!(m_ram_shift&1))
+			m_spu_ram[(address>>(m_ram_shift&2))|1]=data; // both chips written
+	}
+}
+
+
+//
+//
+//
+
+void spu_device::update_key()
+{
+	dirty_flags|=((spureg.keyon[0]|(spureg.keyon[1]<<16)|spureg.keyoff[0]|(spureg.keyoff[1]<<16))&dirtyflag_voice_mask);
+
+	if (spureg.keyoff[0]|(spureg.keyoff[1]<<16))
+	{
+		unsigned int d=spureg.keyoff[0]|(spureg.keyoff[1]<<16);
+		for (int i=0; i<24; i++, d>>=1)
+			if (d&1) key_off(i);
+	}
+
+	if (spureg.keyon[0]|(spureg.keyon[1]<<16))
+	{
+		unsigned int d=spureg.keyon[0]|(spureg.keyon[1]<<16);
+		for (int i=0; i<24; i++, d>>=1)
+			if (d&1) key_on(i);
+		m_voice_active|=spureg.keyon[0]|(spureg.keyon[1]<<16);
+		spureg.chon[0]&=~spureg.keyon[0];
+		spureg.chon[1]&=~spureg.keyon[1];
+	}
+
+	spureg.keyon[0]=spureg.keyon[1]=spureg.keyoff[0]=spureg.keyoff[1]=0;
+}
+
+//
+//
+//
+
+void spu_device::flush_cache(sample_cache *sc,
+													const unsigned int istart,
+													const unsigned int iend)
+{
+	for (unsigned int a=sc->start; a<sc->end; a+=m_counter_packet_next?m_counter_packet_next:8)
+		cache[a>>3]=nullptr;
+
+/*  log_static(log_spu,"cache_invalidate: %08x->%08x\n",
+                                         sc->start,
+                                         sc->end);*/
+
+	sc->invalid_start=(std::min)(sc->invalid_start,istart);
+	sc->invalid_end=(std::max)(sc->invalid_end,iend);
+	sc->valid=false;
+	sc->remove_ref();
+}
+
+//
+//
+//
+
+void spu_device::invalidate_cache(const unsigned int st, const unsigned int en)
+{
+	if (st>en)
+	{
+		if (st<m_counter_size)
+			invalidate_cache(st, m_counter_size);
+		invalidate_cache(0, en);
+		return;
+	}
+
+	for (unsigned int a=st; a<en; a+=m_counter_packet_next?m_counter_packet_next:8)
+		if (cache[a>>3])
+			flush_cache(cache[a >> 3], st, en);
+}
+
+//
+//
+//
+
+spu_device::sample_cache *spu_device::get_sample_cache(const unsigned int addr)
+{
+//  log_static(log_spu,"get_sample_cache: %08x\n",addr);
+
+	assert(addr<m_counter_size);
+	sample_cache *sc=cache[addr>>3];
+	if (sc) return sc;
+
+	unsigned int loop=0;
+	bool has_loop=false;
+
+	sc=new sample_cache(this);
+	sc->valid=true;
+	sc->start=addr;
+	sc->loop=nullptr;
+
+	unsigned int a;
+	for (a=addr; a<m_counter_size;a+=m_counter_packet_next)
+	{
+		adpcm_packet *ap = (adpcm_packet *)packet_read(a);
+		if (cache[a>>3]) flush_cache(cache[a>>3],a,a+(m_counter_packet_next?m_counter_packet_next:8));
+		cache[a>>3]=sc;
+
+		if (ap->flags&adpcmflag_loop_start) { loop=a & (0xffff<<m_counter_shift); has_loop=true; }
+		if (ap->flags&adpcmflag_loop_end) { if (ap->flags&adpcmflag_loop_repeat) sc->is_loop=true; break; }
+		if (!m_counter_packet_next) break;
+	}
+
+	sc->end=(std::min)(m_counter_size,a+(m_counter_packet_next ? m_counter_packet_next : 8));
+
+	unsigned int sz=((sc->end-sc->start)>>m_counter_packet_shift)*28;
+	sc->data=std::make_unique<signed short []>(sz);
+
+	sc->loopaddr=loop;
+	if (has_loop) sc->loop=&sc->data[((loop-sc->start)>>m_counter_packet_shift)*28];
+
+	signed short *dp=sc->data.get();
+
+	for (a=sc->start; a<sc->end; a+=m_counter_packet_next)
+	{
+		adpcm_packet *ap = (adpcm_packet *)packet_read(a);
+		dp=sc->decoder.decode_packet(ap,dp);
+		if (!m_counter_packet_next) break;
+	}
+
+	sc->dend=dp;
+	sc->add_ref();
+
+/*  log_static(log_spu,"cache_add: %08x->%08x\n",
+                                         sc->start,
+                                         sc->end);*/
+
+	return sc;
+}
+
+//
+//
+//
+
+bool spu_device::translate_sample_addr(const unsigned int addr, cache_pointer *cp)
+{
+	assert((addr&((1<<m_counter_packet_shift)-1))==0);
+	cp->reset();
+	if ((cp->cache=get_sample_cache(addr)))
+	{
+		cp->ptr=&cp->cache->data[((addr-cp->cache->start)>>m_counter_packet_shift)*28];
+		cp->cache->add_ref();
+		return true;
+	}
+	return false;
+}
+
+//
+// Get distance in input samples to next IRQ for voice
+//
+
+unsigned int spu_device::get_irq_distance(const voiceinfo *vi)
+{
+	if (spureg.ctrl&spuctrl_irq_enable)
+	{
+		unsigned int irq_addr=spureg.irq_addr<<m_counter_shift;
+		signed short *irq_ptr;
+
+		if ((irq_ptr=vi->play.cache->get_sample_pointer(irq_addr)))
+		{
+			// IRQ address is inside this voices current cache block.  Return distance
+			// if current play address is lower, or equal (and irq has not already
+			// triggered)
+
+			if ((vi->play.ptr<irq_ptr) ||
+					((! vi->hitirq) && (vi->play.ptr==irq_ptr)))
+			{
+				return irq_ptr-vi->play.ptr;
+			}
+		}
+
+		if ((vi->loop) &&
+				(irq_ptr=vi->loop.cache->get_sample_pointer(irq_addr)) &&
+				(irq_ptr>=vi->loop.ptr))
+		{
+			// IRQ address is inside this voices loop cache, return distance
+
+			return (vi->play.cache->dend-vi->play.ptr)+
+							(irq_ptr-vi->loop.ptr);
+		}
+	}
+
+	// IRQs not enabled, or IRQ address not reachable by voice, distance is spu_infinity
+
+	return spu_infinity;
+}
+
+//
+//
+//
+
+void spu_device::update_voice_events(voiceinfo *vi)
+{
+	if (vi->pitch)
+	{
+		// Calculate time until end of sample in output samples
+
+		// A software PCM bank can be much longer than physical SPU RAM.
+		// At a low pitch, the next boundary can be more than UINT32_MAX
+		// output frames away. Wrapping that distance to zero reports END
+		// before the cursor reaches it (and makes loop overshoot invalid).
+		// Event times are recomputed after each generated segment, so a
+		// saturated far-future distance is safe and preserves short timing.
+		const int64_t end_distance=(((((int64_t)(vi->play.cache->dend-vi->play.ptr)<<12)-vi->dptr)+(vi->pitch-1))/vi->pitch);
+		vi->samplestoend=static_cast<unsigned int>((std::min)(end_distance,static_cast<int64_t>(spu_infinity)));
+		if (vi->inloopcache)
+		{
+			// Voice is inside loop cache, return time until end of that if lower
+
+			assert(vi->lcptr<vi->loop_cache->len);
+			vi->samplestoend=(std::min)(vi->samplestoend,
+														(unsigned int)((((int64_t)(vi->loop_cache->len-vi->lcptr)<<12)-vi->dptr)+(vi->pitch-1))/vi->pitch);
+		}
+
+		// Calculate time until next IRQ in output samples
+
+		unsigned int irqdist=get_irq_distance(vi);
+		if (irqdist!=spu_infinity)
+		{
+			// Convert IRQ input sample distance to output samples
+
+			const int64_t irq_distance=(((((int64_t)irqdist)<<12)-vi->dptr)+(vi->pitch-1))/vi->pitch;
+			vi->samplestoirq=static_cast<unsigned int>((std::min)(irq_distance,static_cast<int64_t>(spu_infinity)));
+		} else
+		{
+			vi->samplestoirq=spu_infinity;
+		}
+	} else
+	{
+		// Voice pitch is 0, distance to sample end and IRQ is spu_infinity
+
+		vi->samplestoend=vi->samplestoirq=spu_infinity;
+	}
+}
+
+//
+//
+//
+
+bool spu_device::update_voice_state(const unsigned int v)
+{
+	voicereg *vr=&spureg.voice[v];
+	voiceinfo *vi=&voice[v];
+
+	// Update sample cache if necessary
+
+	if (! vi->play.update(this))
+		return false;
+	assert(vi->play.ptr<vi->play.cache->dend);
+
+	// Get pitch from voice register and apply frequency multiplier if
+	// there is one in effect
+
+	vi->pitch=vr->pitch & 0x3fff; // Hardware pitch is fourteen bits.
+	vi->pitch=(unsigned int)(vi->pitch*freq_multiplier);
+
+	// Update event times
+
+	update_voice_events(vi);
+
+	return true;
+}
+
+//
+//
+//
+
+spu_device::sample_loop_cache *spu_device::get_loop_cache(sample_cache *cache, const unsigned int lpen, sample_cache *lpcache, const unsigned int lpst)
+{
+	// Check for existing loop cache
+
+	sample_loop_cache *ret=lpcache->find_loop_cache(lpen,lpst);
+	if (! ret)
+	{
+		// No loop cache exists for this address pair, create a new one
+
+		auto lc=new sample_loop_cache;
+		lc->loopend=lpen;
+		lc->loopstart=lpst;
+		lpcache->add_loop_cache(lc);
+		ret=lc;
+
+		// Decode samples from start address using decoder state at end address
+
+		unsigned int adr=lpst;
+		adpcm_decoder tmp=cache->decoder;
+		signed short *dp=lc->data;
+		for (unsigned int i=0; ((i<num_loop_cache_packets) &&
+														(adr<lpcache->end)); i++, adr+=m_counter_packet_next)
+			dp=tmp.decode_packet((adpcm_packet *)packet_read(adr),dp);
+
+		#ifdef log_loop_cache
+			log(log_spu,"spu: add loop cache %08x %08x->%08x (end at %08x)\n",lc,lpen,lpst,adr);
+		#endif
+
+		lc->len=dp-lc->data;
+	}
+
+	return ret;
+}
+
+//
+//
+//
+
+void spu_device::update_voice_loop(const unsigned int v)
+{
+//  voicereg *vr=&spureg.voice[v];
+	voiceinfo *vi=&voice[v];
+	unsigned int ra = 0;
+
+	// Check for looping using the voices repeat address register and get
+	// a pointer to the loop position if enabled
+
+	vi->loop.reset();
+	if (vi->play.cache->host_pcm) {
+		if (vi->play.cache->get_loop_pointer(&vi->loop)) {
+			vi->loop_cache=vi->play.cache->loop_cache;
+			vi->loop_cache_owner=vi->loop;
+		}
+		return;
+	}
+
+	// If loop address is not forced get the loop pointer from the cache
+	// block (if present)
+
+	if (vi->play.cache->is_loop && (! voice[v].forceloop) &&
+			(vi->play.cache->get_loop_pointer(&vi->loop)))
+	{
+		ra=vi->play.cache->loopaddr;
+	}
+
+	// Otherwise use the address set in repaddr
+
+	else if ((! vi->loop) && (vi->play.cache->is_loop))
+	{
+		ra=spureg.voice[v].repaddr<<m_counter_shift;
+
+		// Only the END packet's Repeat bit enables looping. A repeat target
+		// may be an ordinary packet (flags 0) or a Loop Start marker (flags 4).
+		if (! vi->play.cache->get_sample_pointer(ra,&vi->loop))
+		{
+			// Repeat address is in a different block
+			translate_sample_addr(ra,&vi->loop);
+		}
+	}
+
+	// Update loop cache
+
+	if (vi->loop)
+	{
+		vi->loop_cache=get_loop_cache(vi->play.cache,vi->play.cache->end,vi->loop.cache,ra);
+		vi->loop_cache_owner = vi->loop;
+	}
+}
+
+//
+//
+//
+
+void spu_device::update_voice_state()
+{
+	// If RAM or irq state is dirty make all voices dirty
+
+	if (dirty_flags&(dirtyflag_ram|dirtyflag_irq))
+	{
+		dirty_flags|=dirtyflag_voice_mask;
+		dirty_flags&=~(dirtyflag_ram|dirtyflag_irq);
+	}
+
+	// Update state for dirty voices
+
+	if (dirty_flags&dirtyflag_voice_mask)
+	{
+		unsigned int voicemask=1;
+		for (unsigned int i=0; i<24; i++, voicemask<<=1)
+			if (dirty_flags&voicemask)
+			{
+				update_voice_state(i);
+				dirty_flags&=~voicemask;
+			}
+	}
+}
+
+//
+// Process voice state and build output segments
+//
+//  Input:  const unsigned int v        Voice number
+//                  const unsigned int sz       Amount of time to process (in output samples)
+//          unsigned int *tleft         Returned number of output samples remaining
+//
+//  Output: bool                                        true if voice is still playing
+//
+
+bool spu_device::process_voice(const unsigned int v,
+														const unsigned int sz,
+														void *ptr,
+														void *fmnoise_ptr,
+														void *outxptr,
+														unsigned int *tleft)
+{
+	bool ret=true;
+	unsigned int num=sz;
+	unsigned int off=0;
+	bool noise=((spureg.noise[v/16]&(1<<(v%16)))!=0),
+				fm=(v>0) && ((spureg.fm[v/16]&(1<<(v%16)))!=0);
+	voiceinfo *vi=&voice[v];
+
+	// Early exit if we don't have a sample cache block
+
+	if (! vi->play)
+	{
+		*tleft=sz;
+		return false;
+	}
+
+	// Generate samples
+
+	while (num)
+	{
+		// Play up to end of sample, envelope event, or IRQ, whichever comes first
+
+		unsigned int ntoplay=fm?1:num,
+									nextevent=(std::min)(vi->samplestoend,
+																(std::min)(vi->samplestoirq,vi->envsamples));
+		ntoplay=(std::min)(ntoplay,nextevent);
+		if (vi->audition_samples)
+			ntoplay=(std::min)(ntoplay,vi->audition_samples);
+
+		if (ntoplay)
+		{
+			signed short *noisep=nullptr;
+
+			if (fm)
+			{
+				int fmv=((signed short *)fmnoise_ptr)[off];
+				vi->pitch=spureg.voice[v].pitch & 0x3fff;
+				vi->pitch=(unsigned int)(vi->pitch*freq_multiplier);
+				vi->pitch=std::min(0x3fffU, (vi->pitch*(fmv+32768))>>15);
+			} else
+			if (noise)
+			{
+				noisep=(signed short *)fmnoise_ptr;
+				noisep+=off;
+			}
+
+			signed short *dp=(signed short *)ptr,
+										*outxp=(signed short *)outxptr;
+			dp+=off<<1;
+			if (outxp) outxp+=off;
+
+			generate_voice(v, dp, noisep, outxp, ntoplay);
+
+			num-=ntoplay;
+			off+=ntoplay;
+
+			vi->samplestoend-=ntoplay;
+			if (vi->samplestoirq!=spu_infinity) vi->samplestoirq-=ntoplay;
+			if (vi->envsamples!=spu_infinity) vi->envsamples-=ntoplay;
+			vi->hitirq=false;
+		}
+
+		// Determine which event(s) we hit
+
+		bool hitend=fm?(vi->play.ptr>=vi->play.cache->dend)
+									:(vi->samplestoend==0),
+					hitirq=(vi->samplestoirq==0),
+					hitenv=(vi->envsamples==0);
+
+		// Update loop cache pointer if we are playing a loop cache
+
+		if ((vi->inloopcache) && (vi->lcptr>=vi->loop_cache->len))
+		{
+			vi->inloopcache=false;
+			hitend=(vi->play.ptr>=vi->play.cache->dend);
+
+			#ifdef log_loop_cache
+				log(log_spu,"spu: %d leave loop cache %08x, lcptr=%d, hitend=%d\n",
+										v,
+										vi->loop_cache,
+										vi->lcptr,
+										hitend);
+			#endif
+		}
+
+		bool stopped=false;
+
+		if (hitend)
+		{
+			// End of sample reached, calculate how far we overshot
+
+			unsigned int poff=vi->play.ptr-vi->play.cache->dend;
+			spureg.chon[v/16]|=1<<(v%16);
+
+			// Make sure loop info is up to date and end the current output segment
+
+			update_voice_loop(v);
+			if (vi->loop && !(vi->env_level==0.0f && vi->envsamples==spu_infinity))
+			{
+				// We are looping, set play address to loop address and account for
+				// overshoot
+
+				vi->play=vi->loop;
+				vi->play.ptr+=poff;
+				vi->lcptr=poff;
+				vi->inloopcache=(poff<vi->loop_cache->len);
+
+				#ifdef log_loop_cache
+					if (vi->inloopcache)
+						log(log_spu,"spu: %d enter loop cache %08x, lcptr=%d\n",
+												v,
+												vi->loop_cache,
+												vi->lcptr);
+				#endif
+
+				// Check for IRQ at/just after repeat address
+
+				if (spureg.ctrl&spuctrl_irq_enable)
+				{
+					if (spureg.voice[v].repaddr==spureg.irq_addr)
+						hitirq=true;
+
+					signed short *irq_ptr;
+					unsigned int irq_addr=spureg.irq_addr<<m_counter_shift;
+
+					if ((irq_ptr=vi->loop.cache->get_sample_pointer(irq_addr)))
+					{
+						if ((irq_ptr>=vi->loop.ptr) &&
+								(vi->play.ptr>=irq_ptr))
+							hitirq=true;
+					}
+				}
+			} else
+			{
+				// Not looping, stop voice
+
+				spureg.reverb[v/16]&=~(1<<(v%16));
+				stopped=true;
+
+				// Check for IRQ at repeat address
+
+				if (spureg.ctrl&spuctrl_irq_enable)
+				{
+					if (spureg.voice[v].repaddr==spureg.irq_addr)
+						hitirq=true;
+				}
+			}
+
+			assert((stopped) || (vi->play.ptr<vi->play.cache->dend));
+		} else
+		{
+			assert(vi->play.ptr<vi->play.cache->dend);
+		}
+
+		if (hitirq)
+		{
+			// Went past IRQ address, trigger IRQ
+			if (!(spureg.status&spustatus_irq) && (spureg.ctrl&spuctrl_irq_enable))
+			{
+				spureg.status|=spustatus_irq;
+				m_irq_cb(0);
+			}
+
+			vi->samplestoirq=spu_infinity;
+			vi->hitirq=true;
+		}
+
+		if (hitenv)
+		{
+			// Envelope event, update the envelope (stop if necessary), and start
+			// a new output segment
+
+			//stopped=((stopped) || (! update_envelope(v)));
+			update_envelope(v);
+		}
+
+		if (vi->audition_restart && (!vi->audition_samples || stopped))
+		{
+			// Restart only after the old voice has faded to zero. Sample and
+			// envelope progress remain intact throughout the preceding fade.
+			key_on(v);
+			spureg.chon[v/16]&=~(1u<<(v%16));
+			vi->audition_gain=0.0f;
+			vi->audition_delta=1.0f/128.0f;
+			vi->audition_samples=128;
+			update_voice_state(v);
+			stopped=false;
+		}
+
+		if (stopped)
+		{
+			// Voice is now stopped
+
+			ret=false;
+			break;
+		}
+
+		// Update voice event times
+
+		update_voice_events(vi);
+	}
+
+	// Set current volume register
+
+	spureg.voice[v].curvol=(unsigned short)(vi->env_level*32767.0f);
+
+	// Return how much time is left and whether or not the voice is still playing
+
+	*tleft=num;
+	return ret;
+}
+
+//
+// Generate voice output samples
+//
+//  Inputs: const unsigned int v        Voice number
+//            void *ptr                             Output buffer (if no reverb)
+//          const unsigned int sz       Number of samples to output
+//
+
+void spu_device::generate_voice(const unsigned int v,
+															void *ptr,
+															void *noiseptr,
+															void *outxptr,
+															const unsigned int sz)
+{
+	voiceinfo *vi=&voice[v];
+	int16_t *sp=vi->inloopcache ? vi->loop_cache->data+vi->lcptr : vi->play.ptr;
+	int16_t *end=vi->inloopcache ? vi->loop_cache->data+vi->loop_cache->len : vi->play.cache->dend;
+	int16_t *first=sp;
+	// At high pitch, the final advance can skip frames in the next cache.
+	// process_voice has now resolved that boundary; consume those frames first.
+	for (unsigned int k=vi->gaussian_pending; k; --k)
+		vi->gaussian_push(sp[-static_cast<int>(k)]);
+	vi->gaussian_pending=0;
+	unsigned int phase=vi->dptr;
+	int16_t *dp=static_cast<int16_t *>(ptr);
+	int16_t *out=static_cast<int16_t *>(outxptr);
+	const int16_t *noise=static_cast<int16_t *>(noiseptr);
+	const int16_t *vol=spureg.volumex[v];
+	int32_t *wide=nullptr;
+	if (host_mix_divisor>1) {
+		const auto address=reinterpret_cast<uintptr_t>(ptr);
+		const auto reverb_base=reinterpret_cast<uintptr_t>(output_buf[1].get());
+		const unsigned int bus=(address>=reverb_base && address<reverb_base+output_buffer_size)?1:0;
+		wide=host_mix_buf[bus].data()+((address-reinterpret_cast<uintptr_t>(output_buf[bus].get()))>>1);
+	}
+	for (unsigned int frame=0; frame<sz; ++frame)
+	{
+		const unsigned int i=(phase>>4)&255;
+		const int interpolated=noise ? noise[frame] : clamp(
+			gauss_product(psx_gauss[255-i],vi->gaussian_history[0])+
+			gauss_product(psx_gauss[511-i],vi->gaussian_history[1])+
+			gauss_product(psx_gauss[256+i],vi->gaussian_history[2])+
+			gauss_product(psx_gauss[i],sp[0]));
+		const int16_t sample=interpolated*vi->env_level*vi->audition_gain;
+		vi->env_level+=vi->env_delta;
+		vi->advance_audition_gain();
+		if (out) out[frame]=sample;
+		if (wide) {
+			for (unsigned int c=0;c<2;c++) {
+				wide[c]+=((sample*vol[c])>>15);
+				dp[c]=clamp(wide[c]/static_cast<int32_t>(host_mix_divisor));
+			}
+			wide+=2;
+		} else {
+			dp[0]=clamp(dp[0]+((sample*vol[0])>>15));
+			dp[1]=clamp(dp[1]+((sample*vol[1])>>15));
+		}
+		dp+=2;
+		phase+=vi->pitch;
+		const unsigned int advance=phase>>12;
+		phase&=0xfff;
+		const unsigned int available=static_cast<unsigned int>(end-sp);
+		const unsigned int consumed=std::min(advance,available);
+		for (unsigned int k=0; k<consumed; ++k) vi->gaussian_push(sp[k]);
+		vi->gaussian_pending=advance-consumed;
+		sp+=advance;
+	}
+	vi->play.ptr+=sp-first;
+	vi->dptr=phase;
+	if (vi->inloopcache) vi->lcptr+=sp-first;
+	if (vi->play.cache->loop && first<=vi->play.cache->loop && sp>vi->play.cache->loop)
+		spureg.voice[v].repaddr=vi->play.cache->loopaddr>>m_counter_shift;
+}
+
+//
+//
+//
+
+bool spu_device::update_envelope(const int v)
+{
+	while (voice[v].envsamples==0)
+	{
+		voice[v].env_state++;
+
+		switch (voice[v].env_state)
+		{
+			case 1: // decay
+				voice[v].env_level=1.0f;
+				voice[v].env_delta=voice[v].env_dr;
+				if (voice[v].env_dr!=0.0f)
+				{
+					voice[v].envsamples=(unsigned int)((voice[v].env_sl-1.0f)/voice[v].env_dr);
+				} else
+				{
+					voice[v].envsamples=spu_infinity;
+				}
+				break;
+
+			case 2: // sustain
+				voice[v].env_level=voice[v].env_sl;
+				voice[v].env_delta=voice[v].env_sr;
+
+				if (voice[v].env_sr>0.0f)
+				{
+					voice[v].envsamples=(unsigned int)((1.0f-voice[v].env_level)/voice[v].env_sr);
+				} else
+				if (voice[v].env_sr<0.0f)
+				{
+					voice[v].envsamples=(unsigned int)(voice[v].env_level/-voice[v].env_sr);
+				} else
+				{
+					voice[v].envsamples=spu_infinity;
+				}
+				break;
+
+			case 3: // sustain end
+				voice[v].envsamples=spu_infinity;
+				voice[v].env_delta=0.0f;
+				if (voice[v].env_sr<=0.0f)
+				{
+					voice[v].env_level=0.0f;
+					return false;
+				} else
+				{
+					voice[v].env_level=1.0f;
+				}
+				break;
+
+			case 4: // release
+			{
+				voice[v].env_level=std::clamp(voice[v].env_level,0.0f,1.0f);
+				const float rate=release_envelope_rate(v);
+				voice[v].env_delta=rate;
+				if (rate == -0.0f)   // 0.0 release means infinite time
+				{
+					voice[v].envsamples=spu_infinity;
+				}
+				else
+				{
+					voice[v].envsamples=(unsigned int)(voice[v].env_level/-rate);
+				}
+				break;
+			}
+
+			case 5: // release end
+				voice[v].env_level=0.0f;
+				voice[v].env_delta=0.0f;
+				voice[v].envsamples=spu_infinity;
+				return false;
+		}
+	}
+	return true;
+}
+
+//
+//
+//
+
+void spu_device::key_on(const int v)
+{
+	voice[v].audition_gain=1.0f;
+	voice[v].audition_delta=0.0f;
+	voice[v].audition_samples=0;
+	voice[v].audition_restart=false;
+	voice[v].audition_release_floor=0.0f;
+	voice[v].loop.reset();
+	voice[v].loop_cache_owner.reset();
+	voice[v].loop_cache = nullptr;
+
+//  printf("key_on: %d @ %x (pitch %x)\n", v, spureg.voice[v].addr<<m_counter_shift, spureg.voice[v].pitch);
+
+	sample_cache *host=nullptr;
+	for(unsigned bank=0;bank<host_samples.size();++bank)
+		if(host_samples[bank]&&(host_sample_masks[bank]&(1u<<v)))host=host_samples[bank];
+	if (host) {
+		voice[v].play.reset();
+		voice[v].play=cache_pointer(host->data.get(),host);
+	} else translate_sample_addr(spureg.voice[v].addr<<m_counter_shift,&voice[v].play);
+	assert(voice[v].play.ptr<voice[v].play.cache->dend);
+
+	voice[v].keyontime=0; //get_system_time();
+
+	voice[v].dptr=0;
+	std::fill_n(voice[v].gaussian_history,3,0);
+	voice[v].gaussian_pending=0;
+	voice[v].inloopcache=false;
+	voice[v].lcptr=-1;
+	voice[v].env_level=0.0f;
+	voice[v].env_state=0;
+	voice[v].forceloop=false;
+
+	// Note: ChronoCross has note hang problems if this is 0 immediately
+	//           after key on
+	spureg.voice[v].curvol=1;
+
+	for (unsigned int ch=0; ch<2; ch++)
+	{
+		{
+			voice[v].sweep_vol[ch]=1.0f;
+		}
+	}
+
+	#ifdef warn_if_sweep_used
+		static bool sweepused;
+		if ((spureg.voice[v].vol[0]|spureg.voice[v].vol[1])&0x8000)
+		{
+			if (! sweepused)
+			{
+				printf("sweep\n");
+				sweepused=true;
+			}
+		}
+	#endif
+
+	#ifdef assert_if_sweep_used
+		assert(((spureg.voice[v].vol[0]|spureg.voice[v].vol[1])&0x8000)==0);
+	#endif
+
+	read_envelope_rates(v);
+	voice[v].envsamples=voice[v].env_ar > 0.0f ? (unsigned int)(1.0f/voice[v].env_ar) : spu_infinity;
+	voice[v].env_delta=voice[v].env_ar;
+}
+
+void spu_device::read_envelope_rates(const unsigned int v)
+{
+	if (spureg.voice[v].adsl&adsl_am)
+	{
+		voice[v].env_ar=get_pos_exp_rate((spureg.voice[v].adsl&adsl_ar_mask)>>adsl_ar_shift);
+	} else
+	{
+		voice[v].env_ar=get_linear_rate((spureg.voice[v].adsl&adsl_ar_mask)>>adsl_ar_shift);
+	}
+
+	voice[v].env_dr=-get_decay_rate((spureg.voice[v].adsl&adsl_dr_mask)>>adsl_dr_shift);
+	voice[v].env_sl=get_sustain_level(spureg.voice[v].adsl&adsl_sl_mask);
+
+	if (spureg.voice[v].srrr&srrr_sm)
+	{
+		if (spureg.voice[v].srrr&srrr_sd)
+		{
+			voice[v].env_sr=get_neg_exp_rate((spureg.voice[v].srrr&srrr_sr_mask)>>srrr_sr_shift);
+		} else
+		{
+			voice[v].env_sr=get_pos_exp_rate((spureg.voice[v].srrr&srrr_sr_mask)>>srrr_sr_shift);
+		}
+	} else
+	{
+		voice[v].env_sr=get_linear_rate((spureg.voice[v].srrr&srrr_sr_mask)>>srrr_sr_shift);
+		if (spureg.voice[v].srrr&srrr_sd)
+			voice[v].env_sr=-voice[v].env_sr;
+	}
+
+	if (spureg.voice[v].srrr&srrr_rm)
+	{
+		voice[v].env_rr=-get_exp_release_rate(spureg.voice[v].srrr&srrr_rr_mask);
+	} else
+	{
+		voice[v].env_rr=-get_linear_release_rate(spureg.voice[v].srrr&srrr_rr_mask);
+	}
+}
+
+float spu_device::release_envelope_rate(const unsigned int v) const
+{
+	// Keep the actual latched RR separate from the manual-release floor.
+	// KOFF must not reread deferred ADSR registers to recover an unclamped rate.
+	const voiceinfo *vi=&voice[v];
+	return vi->audition_release_floor<0.0f ? (std::max)(vi->env_rr,vi->audition_release_floor) : vi->env_rr;
+}
+
+void spu_device::schedule_live_envelope(const unsigned int v)
+{
+	voiceinfo *vi=&voice[v];
+	vi->env_level=std::clamp(vi->env_level,0.0f,1.0f);
+	// Avoid signed-to-unsigned wrap when SL was moved above a decaying level,
+	// and avoid undefined float-to-integer conversion for very slow rates.
+	const auto samples_to=[](float distance,float rate) -> unsigned int
+	{
+		if (!(rate>0.0f)) return spu_infinity;
+		const double count=std::ceil(double((std::max)(distance,0.0f))/double(rate));
+		if (count>=double(spu_infinity-1)) return spu_infinity-1;
+		return (std::max)(1u,static_cast<unsigned int>(count));
+	};
+	if (vi->env_state==1 && vi->env_sl>=vi->env_level)
+		vi->env_state=2; // Sustain starts at the current level, without a jump.
+	if (vi->env_state==3)
+		vi->env_state=2; // A changed sustain rate can leave its old endpoint.
+	switch (vi->env_state)
+	{
+		case 0:
+			vi->env_delta=vi->env_ar;
+			vi->envsamples=samples_to(1.0f-vi->env_level,vi->env_ar);
+			break;
+		case 1:
+			vi->env_delta=vi->env_dr;
+			vi->envsamples=samples_to(vi->env_level-vi->env_sl,-vi->env_dr);
+			break;
+		case 2:
+			vi->env_delta=vi->env_sr;
+			vi->envsamples=vi->env_sr>=0.0f ? samples_to(1.0f-vi->env_level,vi->env_sr)
+				: samples_to(vi->env_level,-vi->env_sr);
+			break;
+		case 4:
+			vi->env_delta=release_envelope_rate(v);
+			vi->envsamples=samples_to(vi->env_level,-vi->env_delta);
+			break;
+		default:
+			vi->env_delta=0.0f;
+			vi->envsamples=spu_infinity;
+			break;
+	}
+}
+
+void spu_device::refresh_envelope(unsigned int v)
+{
+	read_envelope_rates(v);
+	if (m_voice_active&(1u<<v)) schedule_live_envelope(v);
+}
+
+void spu_device::audition_key(unsigned int v,bool on)
+{
+	voiceinfo *vi=&voice[v];
+	const unsigned int mask=1u<<v;
+	if (on)
+	{
+		if ((m_voice_active&mask) && vi->play && vi->env_level>0.0f)
+		{
+			vi->audition_restart=true;
+			vi->audition_delta=-vi->audition_gain/128.0f;
+			vi->audition_samples=128;
+		}
+		else
+		{
+			key_on(v);
+			vi->audition_gain=0.0f;
+			vi->audition_delta=1.0f/128.0f;
+			vi->audition_samples=128;
+			m_voice_active|=mask;
+			spureg.chon[v/16]&=~(1u<<(v%16));
+			update_voice_state(v);
+		}
+	}
+	else
+	{
+		const float gain=vi->audition_gain;
+		key_off(v); // Cancels any pending restart before releasing this note.
+		vi->audition_gain=gain;
+		if (gain<1.0f)
+		{
+			vi->audition_delta=(1.0f-gain)/128.0f;
+			vi->audition_samples=128;
+		}
+		vi->audition_release_floor=-std::clamp(vi->env_level,0.0f,1.0f)/128.0f;
+		if (vi->env_state==3) update_envelope(v);
+		else if (vi->env_state==4) schedule_live_envelope(v);
+	}
+}
+
+//
+//
+//
+
+void spu_device::set_xa_format(const float _freq, const int channels)
+{
+	// Adjust frequency to compensate for slightly slower/faster frame rate
+//  float freq=44100.0; //(_freq*get_adjusted_frame_rate())/ps1hw.rcnt->get_vertical_refresh();
+
+	xa_freq=(unsigned int)((_freq/44100.0f)*4096.0f);
+	xa_channels=channels;
+	xa_spf=(unsigned int)(_freq/60.0f)*channels;
+}
+
+//
+//
+//
+
+void spu_device::generate_xa(void *ptr, const unsigned int sz)
+{
+	if (xa_buffer->get_bytes_in())
+	{
+		// Don't start playing until 8 frames worth of data are in
+
+	if ((! xa_playing) && (xa_buffer->get_bytes_in()<(xa_spf<<3)))
+		{
+//          debug_xa("waiting...\n");
+		return;
+		}
+
+		xa_playing=true;
+
+		// Init buffer pointers/counters
+
+		int n=sz>>2;
+		signed short *sp=(signed short *)xa_buffer->get_tail_ptr(),
+									*dp=(signed short *)ptr;
+		unsigned int noff=(1<<xa_channels),
+									oldtail=xa_buffer->get_tail_offset();
+
+		assert((xa_channels==1) || (xa_channels==2));
+
+		// Generate requested number of XA samples
+
+		while ((xa_buffer->get_bytes_in()) && (n--))
+		{
+			signed short *nsp=(signed short *)xa_buffer->get_tail_ptr(noff);
+			const int16_t l0=sp[0];
+			const int16_t l1=nsp[0];
+			const int16_t l=l0+(((l1-l0)*(int)xa_cnt)>>12);
+
+			const int16_t r0=sp[xa_channels-1];
+			const int16_t r1=nsp[xa_channels-1];
+			const int16_t r=r0+(((r1-r0)*(int)xa_cnt)>>12);
+
+			write_decoded_data(0, l);
+			write_decoded_data(1, r);
+
+			const int16_t vl=(l*spureg.cdvol[0])>>15;
+			const int16_t vr=(r*spureg.cdvol[1])>>15;
+
+			dp[0]=clamp(vl+dp[0]);
+			dp[1]=clamp(vr+dp[1]);
+			dp+=2;
+
+			// Advance input counter/pointer
+
+			xa_cnt+=xa_freq;
+			int ss=(xa_cnt>>12);
+			xa_cnt&=0xfff;
+
+			if (ss)
+			{
+				ss<<=xa_channels;
+				ss=(std::min)(ss,(int)xa_buffer->get_bytes_in());
+
+				xa_buffer->increment_tail(ss);
+				sp=(signed short *)xa_buffer->get_tail_ptr();
+			}
+		}
+
+		// Delete buffer markers we have passed
+
+		xa_buffer->delete_markers(oldtail);
+	}
+
+	// If we run out of input set status to stopped
+	if (! xa_buffer->get_bytes_in())
+		xa_playing=false;
+}
+
+//
+//
+//
+
+void spu_device::generate_cdda(void *ptr, const unsigned int sz)
+{
+	if (cdda_buffer->get_bytes_in())
+	{
+		unsigned int cdda_spf=(44100*4)/60.0,
+									freq=(unsigned int)((cdda_freq*60.0)/60.0);
+
+		if ((! cdda_playing) && (cdda_buffer->get_bytes_in()<(cdda_spf<<3)))
+			return;
+
+		cdda_playing=true;
+
+		int n=sz>>2;
+		signed short *sp=(signed short *)cdda_buffer->get_tail_ptr(),
+									*dp=(signed short *)ptr;
+		unsigned int oldtail=cdda_buffer->get_tail_offset();
+
+		while ((cdda_buffer->get_bytes_in()) && (n--))
+		{
+			const int16_t l=sp[0];
+			const int16_t r=sp[1];
+
+			write_decoded_data(0, l);
+			write_decoded_data(1, r);
+
+			const int16_t vl=(l*spureg.cdvol[0])>>15;
+			const int16_t vr=(r*spureg.cdvol[1])>>15;
+
+			dp[0]=clamp(vl+dp[0]);
+			dp[1]=clamp(vr+dp[1]);
+			dp+=2;
+
+			cdda_cnt+=freq;
+			int ss=(cdda_cnt>>12);
+			cdda_cnt&=0xfff;
+
+			if (ss)
+			{
+				ss<<=2;
+
+				cdda_buffer->increment_tail(ss);
+				sp=(signed short *)cdda_buffer->get_tail_ptr();
+			}
+		}
+
+		cdda_buffer->delete_markers(oldtail);
+
+		if (! cdda_buffer->get_bytes_in())
+			cdda_playing=false;
+
+//      if (n>0) printf("cdda buffer underflow (n=%d cdda_in=%d spf=%d)\n",n,cdda_buffer->get_bytes_in(),cdda_spf);
+	}
+}
+
+//
+//
+//
+
+void spu_device::key_off(const int v)
+{
+	voice[v].audition_gain=1.0f;
+	voice[v].audition_delta=0.0f;
+	voice[v].audition_samples=0;
+	voice[v].audition_restart=false;
+	voice[v].audition_release_floor=0.0f;
+//  printf("key_off: %d\n", v);
+
+	if (voice[v].env_state<=3)
+	{
+		voice[v].env_state=3;
+		voice[v].envsamples=0;
+	}
+}
+
+//
+//
+//
+
+void spu_device::clear_reverb() noexcept
+{
+	rev->clear();
+}
+
+void spu_device::update_reverb()
+{
+	if (dirty_flags&dirtyflag_reverb)
+	{
+		// TODO: Handle cases where reverb present can't be found better
+		// If a save state is loaded and has reverb values that don't match a preset
+		// then spu_reverb_cfg is never set so the reverb settings won't be the same as
+		// when the save state was created.
+		// This only becomes an issue when loading save states from the command line
+		// because if you load a save state from within MAME it will hold the last used
+		// spu_reverb_cfg and reuse that value.
+		cur_reverb_preset=find_reverb_preset(spureg.reverbconfig);
+
+		if (cur_reverb_preset==nullptr)
+		{
+//          printf("spu: reverb=unknown (reg 1c0 = %x)\n", reg[0x1c0]);
+		} else
+		{
+//          printf("spu: reverb=%s\n",cur_reverb_preset->name);
+			spu_reverb_cfg=&cur_reverb_preset->cfg;
+
+
+		}
+
+		dirty_flags&=~dirtyflag_reverb;
+	}
+}
+
+//
+//
+//
+
+void spu_device::flush_output_buffer()
+{
+	output_head=output_tail=output_size=0;
+}
+
+//
+//
+//
+
+void spu_device::generate(void *ptr, const unsigned int sz)
+{
+	uint32_t decoded_data_ptr = m_decoded_data_ptr[0];
+	m_decoded_data_ptr.fill(decoded_data_ptr);
+	m_decoded_data_remaining.fill(sz>>2);
+
+	cur_generate_sample+=sz>>2;
+	process_until(cur_generate_sample);
+
+	update_reverb();
+
+	unsigned int left=sz;
+	unsigned char *dp=(unsigned char *)ptr;
+
+	while ((left) && (output_size))
+	{
+		unsigned int n=(std::min)((std::min)(left,output_buffer_size-output_head),output_size);
+		memcpy(dp,&output_buf[0][output_head],n);
+		if (host_mix_divisor>1) {
+			const auto *dry=reinterpret_cast<const int16_t *>(&output_buf[0][output_head]);
+			const auto *send=reinterpret_cast<const int16_t *>(&output_buf[1][output_head]);
+			const unsigned int start=output_head>>1,position=(dp-static_cast<unsigned char *>(ptr))>>1;
+			for (unsigned int j=0;j<(n>>1);j++)
+				host_mix_correction[position+j]=float(host_mix_buf[0][start+j]+host_mix_buf[1][start+j])/float(host_mix_divisor)-float(dry[j]+send[j]);
+		}
+
+		rev->process((signed short *)dp,
+									(signed short *)&output_buf[1][output_head],
+									spu_reverb_cfg,
+									(signed short)spureg.rvol[0],
+									(signed short)spureg.rvol[1],
+									n);
+
+		output_size-=n;
+		output_head+=n;
+		output_head&=(output_buffer_size-1);
+		dp+=n;
+		left-=n;
+	}
+
+	if (left)
+	{
+		memset(dp,0,left);
+	}
+
+	generate_xa(ptr,sz);
+	generate_cdda(ptr,sz);
+
+	for (size_t i=0; i<m_decoded_data_ptr.size(); i++)
+		while(m_decoded_data_remaining[i])
+			write_decoded_data(i, 0);
+
+	if (!(spureg.status&spustatus_irq) && (spureg.ctrl&spuctrl_irq_enable) && !(decoded_data_ptr&(m_counter_word_next-1)))
+	{
+		uint32_t irq_counter=(spureg.irq_addr<<m_counter_shift);
+		size_t i=irq_counter/m_decoded_data_size;
+		if (i<m_decoded_data_ptr.size())
+		{
+			uint32_t buffer_start=(i*m_decoded_data_size);
+			uint32_t buffer_end=buffer_start+m_decoded_data_size;
+			uint32_t update_start=(decoded_data_ptr&m_decoded_data_mask)|buffer_start;
+			uint32_t update_end=(m_decoded_data_ptr[i]&m_decoded_data_mask)|buffer_start;
+			if ((update_start<update_end && irq_counter>=update_start && irq_counter<update_end) ||
+				(update_start>=update_end && ((irq_counter>=update_start && irq_counter<buffer_end) || (irq_counter>=buffer_start && irq_counter<update_end))))
+			{
+				spureg.status|=spustatus_irq;
+				m_irq_cb(0);
+			}
+		}
+	}
+}
+
+//
+//
+//
+
+void spu_device::update_irq_event()
+{
+	unsigned int samplestoirq=spu_infinity;
+
+	if (!(spureg.status&spustatus_irq) && (spureg.ctrl&spuctrl_irq_enable))
+	{
+		uint32_t irq_counter=(spureg.irq_addr<<m_counter_shift);
+		size_t i=irq_counter/m_decoded_data_size;
+		if (i<m_decoded_data_ptr.size() && !(m_decoded_data_ptr[i]&(m_counter_word_next-1)))
+			samplestoirq=((irq_counter-m_decoded_data_ptr[i])&m_decoded_data_mask)/m_counter_word_next;
+	}
+
+	for (int i=0; i<24; i++)
+		if (voice[i].samplestoirq!=spu_infinity)
+		{
+			if (voice[i].samplestoirq==0)
+			{
+				if (!(spureg.status&spustatus_irq) && (spureg.ctrl&spuctrl_irq_enable))
+				{
+					spureg.status|=spustatus_irq;
+					m_irq_cb(0);
+				}
+
+				voice[i].samplestoirq=spu_infinity;
+				voice[i].hitirq=true;
+			} else
+			{
+				samplestoirq=(std::min)(samplestoirq,voice[i].samplestoirq);
+			}
+		}
+
+	(void)samplestoirq; // No host IRQ timer in the instrument-only interface.
+}
+
+//
+//
+//
+
+void spu_device::generate_noise(void *ptr, const unsigned int num)
+{
+	unsigned int np=(unsigned int)(65536.0f/(0x40-((spureg.ctrl&spuctrl_noise_mask)>>spuctrl_noise_shift)));
+	np=((np<<1)+np)>>1;
+
+	signed short *dp=(signed short *)ptr;
+
+	for (unsigned int i=0; i<num; i++)
+	{
+		signed short v=noise_cur;
+		*dp++=v;
+		noise_t+=np;
+
+		if (noise_t>0xffff)
+		{
+			noise_t-=0xffff;
+			shift_register15(noise_seed);
+			noise_cur=noise_seed<<1;
+		}
+	}
+}
+
+//
+//
+//
+
+void spu_device::process_until(const unsigned int tsample)
+{
+	while (tsample>cur_frame_sample)
+	{
+		unsigned int process_samples=(unsigned int)(tsample-cur_frame_sample);
+
+		// Drop samples from the head of the queue if its full
+
+		process_samples=(std::min)(process_samples,output_buffer_size>>2);
+		unsigned int nsz=output_size+(process_samples<<2);
+		if (nsz>output_buffer_size)
+		{
+			nsz-=output_buffer_size;
+
+			output_head+=nsz;
+			output_size-=nsz;
+			output_head&=(output_buffer_size-1);
+		}
+
+		// Decide how many samples to process taking into account buffer
+		// wrap in output queue.  Get pointers to the queues.
+
+		process_samples=(std::min)(process_samples,
+												(output_buffer_size-output_tail)>>2);
+
+		void *outptr=&output_buf[0][output_tail],
+									*reverbptr=&output_buf[1][output_tail],
+									*fmptr=&output_buf[2][0],
+									*noiseptr=&output_buf[3][0];
+
+		output_tail+=process_samples<<2;
+		output_tail&=(output_buffer_size-1);
+		output_size+=process_samples<<2;
+		assert(output_size<=output_buffer_size);
+
+		// Intialise the output samples to 0 (process_voice always adds samples)
+
+		memset(outptr,0,process_samples<<2);
+		memset(reverbptr,0,process_samples<<2);
+		if (host_mix_divisor>1) {
+			const unsigned int start=(static_cast<unsigned char *>(outptr)-output_buf[0].get())>>1;
+			for (auto &mix : host_mix_buf) std::fill_n(mix.data()+start,process_samples*2,0);
+		}
+
+		// If noise is enabled for any channels generate noise samples
+
+		if ((spureg.noise[0]|(spureg.noise[1]<<16))&0xffffff)
+			generate_noise(noiseptr,process_samples);
+
+		unsigned int mask=1;
+		for (int i=0; i<24; i++, mask<<=1)
+		{
+			unsigned int tleft=process_samples;
+			const bool isfmin=(i<23) && (spureg.fm[(i+1)/16]&(1<<((i+1)%16)))!=0;
+
+			if (m_voice_active&mask)
+			{
+				const bool isfm=(i>0) && (spureg.fm[i/16]&(1<<(i%16)))!=0;
+				const bool isnoise=(spureg.noise[i/16]&(1<<(i%16)))!=0;
+				const bool isreverb=(spureg.reverb[i/16]&(1<<(i%16)))!=0;
+				const int dd=(i==1)?2:(i==3)?3:0;
+				unsigned short *outxptr=isfmin||dd?(unsigned short *)fmptr:nullptr;
+
+				// Generate samples
+
+				if (! process_voice(i,
+														process_samples,
+														isreverb?reverbptr:outptr,
+														isnoise?noiseptr
+																:(isfm?fmptr:nullptr),
+														outxptr,
+														&tleft))
+				{
+					m_voice_active&=~mask;
+					//spureg.reverb[i/16]&=~(1<<(i%16)));
+
+					voice[i].play.reset();
+					voice[i].loop.reset();
+					voice[i].loop_cache_owner.reset();
+					voice[i].loop_cache = nullptr;
+				}
+
+				if (dd)
+					for (int j=0; j<process_samples-tleft; j++)
+						write_decoded_data(dd, outxptr[j]);
+			} else
+			{
+				spureg.voice[i].curvol=0;
+			}
+
+			// This channel is an FM input for the next channel - clear the remaining
+			// FM input buffer
+			if (isfmin && tleft)
+				memset(((signed short*)fmptr)+process_samples-tleft,0,tleft*sizeof(signed short));
+		}
+
+		cur_frame_sample+=process_samples;
+	}
+}
+
+//
+//
+//
+
+void spu_device::update_timing()
+{
+	samples_per_frame=44100.0/60.0; //get_adjusted_frame_rate();
+	samples_per_cycle=samples_per_frame/60*(44100*768); //ps1hw.rcnt->get_vertical_cycles();
+
+}
+
+//
+//
+//
+
+void spu_device::update_ram_ctrl()
+{
+	invalidate_cache(0, m_counter_size);
+	dirty_flags|=dirtyflag_ram;
+
+	if ((spureg.ram_ctrl&0xe)==0x4)
+	{
+		m_decoded_data_size=0x1000;
+		m_decoded_data_mask=0x0fff;
+		m_counter_packet_shift=6;
+		m_counter_packet_next=64;
+		m_counter_word_next=8;
+	}
+	else if ((spureg.ram_ctrl&0xe)==0x6)
+	{
+		m_decoded_data_size=0x800;
+		m_decoded_data_mask=0x7ff;
+		m_counter_packet_shift=5;
+		m_counter_packet_next=32;
+		m_counter_word_next=4;
+	}
+	else if ((spureg.ram_ctrl&0xe)==0x8)
+	{
+		m_decoded_data_size=0x400;
+		m_decoded_data_mask=0x3ff;
+		m_counter_packet_shift=4;
+		m_counter_packet_next=16;
+		m_counter_word_next=2;
+	}
+	else if ((spureg.ram_ctrl&0xe)==0xa)
+	{
+		m_decoded_data_size=0x200;
+		m_decoded_data_mask=0x1ff;
+		m_counter_packet_shift=3;
+		m_counter_packet_next=8;
+		m_counter_word_next=1;
+	}
+	else
+	{
+		m_decoded_data_size=0x200;
+		m_decoded_data_mask=0x1ff;
+		m_counter_packet_shift=0;
+		m_counter_packet_next=0;
+		m_counter_word_next=0;
+	}
+}
+
+//
+//
+//
+
+void spu_device::decode_xa_mono(const unsigned char *xa,
+															unsigned char *ptr)
+{
+	signed short *dp=(signed short *)ptr;
+
+	int l0=xa_last[0],
+			l1=xa_last[1];
+
+	for (int b=0; b<18; b++)
+	{
+		for (int s=0; s<4; s++)
+		{
+			unsigned char flags=xa[4+(s<<1)],
+										shift=flags&0xf,
+										filter=flags>>4;
+			int f0=filter_coef[filter][0],
+					f1=filter_coef[filter][1];
+			int i;
+
+			for (i=0; i<28; i++)
+			{
+				short d=(xa[16+(i<<2)+s]&0xf)<<12;
+				d=clamp((d>>shift)+(((l0*f0)+(l1*f1)+32)>>6));
+				*dp++=d;
+				l1=l0;
+				l0=d;
+			}
+
+			flags=xa[5+(s<<1)];
+			shift=flags&0xf;
+			filter=flags>>4;
+			f0=filter_coef[filter][0];
+			f1=filter_coef[filter][1];
+
+			for (i=0; i<28; i++)
+			{
+				short d=(xa[16+(i<<2)+s]>>4)<<12;
+				d=clamp((d>>shift)+(((l0*f0)+(l1*f1)+32)>>6));
+				*dp++=d;
+				l1=l0;
+				l0=d;
+			}
+		}
+
+		xa+=128;
+	}
+
+	xa_last[0]=l0;
+	xa_last[1]=l1;
+}
+
+//
+//
+//
+
+void spu_device::decode_xa_stereo(const unsigned char *xa,
+																unsigned char *ptr)
+{
+	signed short *dp=(signed short *)ptr;
+
+	int l0=xa_last[0],
+			l1=xa_last[1],
+			l2=xa_last[2],
+			l3=xa_last[3];
+
+	for (int b=0; b<18; b++)
+	{
+		for (int s=0; s<4; s++)
+		{
+			unsigned char flags0=xa[4+(s<<1)],
+										shift0=flags0&0xf,
+										filter0=flags0>>4,
+										flags1=xa[5+(s<<1)],
+										shift1=flags1&0xf,
+										filter1=flags1>>4;
+
+			int f0=filter_coef[filter0][0],
+					f1=filter_coef[filter0][1],
+					f2=filter_coef[filter1][0],
+					f3=filter_coef[filter1][1];
+
+			for (int i=0; i<28; i++)
+			{
+				short d=xa[16+(i<<2)+s],
+							d0=(d&0xf)<<12,
+							d1=(d>>4)<<12;
+				d0=clamp((int)(d0>>shift0)+(((l0*f0)+(l1*f1)+32)>>6));
+				*dp++=d0;
+				l1=l0;
+				l0=d0;
+
+				d1=clamp((int)(d1>>shift1)+(((l2*f2)+(l3*f3)+32)>>6));
+				*dp++=d1;
+				l3=l2;
+				l2=d1;
+			}
+		}
+
+		xa+=128;
+	}
+
+	xa_last[0]=l0;
+	xa_last[1]=l1;
+	xa_last[2]=l2;
+	xa_last[3]=l3;
+}
+
+//
+//
+//
+
+/*
+enum
+{
+    xaencoding_stereo_mask=3,
+    xaencoding_freq_shift=2,
+    xaencoding_freq_mask=3<<xaencoding_freq_shift,
+    xaencoding_bps_shift=4,
+    xaencoding_bps_mask=3<<xaencoding_bps_shift,
+    xaencoding_emphasis=(1<<6)
+};
+*/
+
+bool spu_device::play_xa(const unsigned int sector, const unsigned char *xa)
+{
+	// Don't process the sector if the buffer is full
+
+	if (xa_buffer->get_bytes_free()<xa_sector_size) return false;
+
+//  debug_xa("play_xa: %d\n",sector);
+
+	// Get XA format from sector header
+
+	const unsigned char *hdr=xa+4;
+	float freq;
+	int channels;
+
+	switch (hdr[3]&0x3f)    // ignore emphasis and reserved bits
+	{
+		case 0:
+			channels=1;
+			freq=37800.0f;  //18900.0f;
+			break;
+
+		case 1:
+			channels=2;
+			freq=37800.0f;
+			break;
+
+		case 4:
+			channels=1;
+			freq=18900.0f;  ///2.0f;
+			break;
+
+		case 5:
+			channels=2;
+			freq=18900.0f;  //37800.0f/2.0f;
+			break;
+
+		default:
+			printf("play_xa: unhandled xa mode %08x\n",hdr[3]);
+			return true;
+	}
+
+	set_xa_format(freq,channels);
+
+	// Store XA marker
+
+	unsigned char *ptr=xa_buffer->add_sector(sector);
+
+	// Decode the sector
+
+	if (channels==2)
+	{
+		decode_xa_stereo(xa+8,ptr);
+	} else
+	{
+		decode_xa_mono(xa+8,ptr);
+	}
+
+	// Return that we processed the sector
+	return true;
+}
+
+//
+// Flush everything after a given sector in the XA buffer
+//
+
+void spu_device::flush_xa(const unsigned int sector)
+{
+//  debug_xa("flush_xa: %d\n",sector);
+
+	if (xa_playing)
+	{
+		xa_buffer->flush(sector);
+	} else
+	{
+		// Not playing, flush the entire buffer
+
+		xa_buffer->flush_all();
+		xa_cnt=0;
+	}
+}
+
+//
+//
+//
+
+bool spu_device::play_cdda(const unsigned int sector, const unsigned char *cdda)
+{
+	if (cdda_buffer->get_bytes_free()<cdda_sector_size) return false;
+
+	signed short *dp=(signed short *)cdda_buffer->add_sector(sector);
+	memcpy(dp,cdda,cdda_sector_size);
+
+	// data coming in in MAME is big endian as stored on the CD
+	unsigned char *flip = (unsigned char *)dp;
+	for (int i = 0; i < cdda_sector_size; i+= 2)
+	{
+		unsigned char temp = flip[i];
+		flip[i] = flip[i+1];
+		flip[i+1] = temp;
+	}
+
+	return true;
+}
+
+void spu_device::flush_cdda(const unsigned int sector)
+{
+//  debug_xa("flush_cdda: %d\n",sector);
+
+	if (cdda_playing)
+	{
+		cdda_buffer->flush(sector);
+	} else
+	{
+		cdda_buffer->flush_all();
+		cdda_cnt=0;
+	}
+}
+
+void spu_device::dma_read( uint32_t *mainram, uint32_t address, int32_t size )
+{
+	assert(taddr<m_counter_size);
+
+	for (size_t offset=0; offset<size*4; offset+=2, taddr=(taddr+m_counter_word_next)&(m_counter_size-1))
+		*((uint16_t*)(((uint8_t*)mainram)+(address+offset)))=ram_read(taddr);
+}
+
+void spu_device::dma_write( uint32_t *mainram, uint32_t address, int32_t size )
+{
+//  printf("SPU DMA write from %x, size %x\n", n_address, n_size);
+
+	assert(taddr<m_counter_size);
+	uint32_t st=taddr;
+
+	for (size_t offset=0; offset<size*4; offset+=2, taddr=(taddr+m_counter_word_next)&(m_counter_size-1))
+		ram_write(taddr, *((uint16_t*)(((uint8_t*)mainram)+(address+offset))));
+
+	invalidate_cache(st, taddr);
+	dirty_flags|=dirtyflag_ram;
+}
+
+// Standalone adapter. Original voice/decode/mixing paths above are retained.
+void spu_device::reset(bool clear_ram)
+{
+	device_reset();
+	if (clear_ram) standalone_ram.fill(0);
+}
+
+void spu_device::load_ram(uint32_t address, const uint8_t *data, uint32_t length)
+{
+	std::memcpy(reinterpret_cast<uint8_t*>(m_spu_ram) + address, data, length);
+	// The upstream cache indexes internal counters, not physical bytes. Full
+	// invalidation also covers overlapping sample and loop caches safely.
+	invalidate_cache(0, m_counter_size);
+	dirty_flags |= dirtyflag_ram;
+	update_voice_state();
+}
+
+void spu_device::read_ram(uint32_t address, uint8_t *data, uint32_t length) const
+{
+	std::memcpy(data, reinterpret_cast<const uint8_t*>(m_spu_ram) + address, length);
+}
+
+void spu_device::set_mix_headroom(uint32_t divisor)
+{
+	if (divisor<1 || divisor>32) throw std::out_of_range("Mix headroom must be 1..32");
+	if (host_mix_divisor!=divisor) {flush_output_buffer();host_mix_divisor=divisor;}
+}
+
+void spu_device::render(float *left, float *right, uint32_t frames)
+{
+	// The original output ring contains 2,048 stereo frames. Draining each
+	// chunk prevents its drop-oldest policy from discarding earlier samples.
+	std::array<int16_t, 4096> pcm{};
+	uint32_t position = 0;
+	while (position < frames)
+	{
+		const uint32_t count = std::min<uint32_t>(2048, frames - position);
+		if (host_mix_divisor>1) host_mix_correction.fill(0);
+		generate(pcm.data(), count * 4);
+		for (uint32_t i = 0; i < count; ++i)
+		{
+			// Match MAME's sound_stream_update fixed master gain. SPUCNT output
+			// enable/mute is enforced here because upstream does not gate it.
+			const bool enabled = (spureg.ctrl & 0xc000) == 0xc000;
+			left[position + i] = enabled ? (host_mix_divisor>1 ? std::clamp(float(pcm[i*2])+host_mix_correction[i*2],-32768.0f,32767.0f) : float(pcm[i*2])) * float(spureg.mvolx[0]) / 1073741824.0f : 0.0f;
+			right[position + i] = enabled ? (host_mix_divisor>1 ? std::clamp(float(pcm[i*2+1])+host_mix_correction[i*2+1],-32768.0f,32767.0f) : float(pcm[i*2+1])) * float(spureg.mvolx[1]) / 1073741824.0f : 0.0f;
+		}
+		position += count;
+		// Keep the upstream relative sample counters bounded for long sessions.
+		cur_frame_sample = cur_generate_sample = 0;
+	}
+}
+
+// Host-only PCM bank. Prepare before note-on; the audio renderer still uses
+// the normal Gaussian interpolation, PMON, envelope, volume and reverb path.
+// All voices share immutable sample storage and keep independent cursors.
+void spu_device::set_host_pcm_bank(unsigned bank,const int16_t *pcm,uint32_t frames,bool looping)
+{
+    if(bank>=host_samples.size())throw std::out_of_range("Host PCM bank");
+    std::unique_ptr<sample_cache> next;
+    if (frames) {
+        next=std::make_unique<sample_cache>(this);
+        next->host_pcm=true;
+        next->valid=true;
+        next->is_loop=looping;
+        next->start=0x10000000*(bank+1);
+        next->end=next->start+((frames+27)/28)*m_counter_packet_next;
+        next->loopaddr=next->start;
+        // A tiny guard region permits the renderer to advance by pitch <= 4
+        // beyond the end before the normal end/loop event consumes overshoot.
+        next->data=std::make_unique<signed short []>(frames+4);
+        next->dend=next->data.get()+frames;
+        next->loop=looping ? next->data.get() : nullptr;
+        if (looping) {
+            next->loop_cache=new sample_loop_cache;
+            next->loop_cache->len=std::min<uint32_t>(frames,num_loop_cache_samples);
+        }
+        next->add_ref();
+    }
+    if (host_samples[bank]) host_samples[bank]->remove_ref();
+    host_samples[bank]=next.release();
+    if (!host_samples[bank]) host_sample_masks[bank]=0;
+    else update_host_pcm_bank(bank,pcm,frames);
+}
+
+bool spu_device::update_host_pcm_bank(unsigned bank,const int16_t *pcm,uint32_t frames) noexcept
+{
+    if (bank>=host_samples.size()||!host_samples[bank]||!pcm||!frames||
+        static_cast<std::size_t>(host_samples[bank]->dend-host_samples[bank]->data.get())!=frames)
+        return false;
+    auto *cache=host_samples[bank];
+    if (cache->is_loop && (!cache->loop_cache ||
+        cache->loop_cache->len!=std::min<uint32_t>(frames,num_loop_cache_samples)))
+        return false;
+    // All validation precedes mutation. No cache/pointer ownership changes:
+    // held voices may currently address either of these two PCM arrays.
+    std::copy_n(pcm,frames,cache->data.get());
+    for(unsigned i=0;i<4;++i)cache->data[frames+i]=cache->is_loop?pcm[i%frames]:0;
+    if(cache->is_loop){
+        auto *loop=cache->loop_cache;
+        std::copy_n(pcm,loop->len,loop->data);
+        for(unsigned i=0;i<4;++i)loop->data[loop->len+i]=pcm[(loop->len+i)%frames];
+    }
+    return true;
+}

@@ -29,8 +29,29 @@ Software morph starts enabled, with Wave A = Sine, Wave B = Saw and amount 0%
 (Sine only). Reset instrument restores this setup. Imported audio and bank Tones
 disable morph; loaded presets restore their saved setting.
 
-**PCM** draws a short repeating waveform. **ADSR** contains the envelope
-parameters and draggable A / D / S / R guide. **FX** controls SPU reverb.
+**PCM** edits a short repeating waveform or an imported ADPCM sample. **ADSR**
+contains the envelope parameters and draggable A / D / S / R guide. **FX**
+controls SPU reverb. Imported ADPCM from Capture, a VAB Tone or a preset opens
+the **full sample PCM** editor on the same canvas. Its overview includes the
+entire sample; zoom or choose a visible frame range for detailed drawing, or
+set an individual sample by index and value. The loop-start marker remains at
+its original source frame. Length, loop boundaries and declared root tuning
+are kept; this view is source PCM rather than the current playback cursor.
+
+Full-sample editing is a Tetorica software editor. A completed stroke or numeric
+change encodes the whole sample back to SPU ADPCM in a preparation Worker, then
+stops held notes and applies the result. Re-encoding adds ADPCM quantization.
+The original bank sample is kept, and repeated edits reuse a private RAM slot
+of the same size. The first edit needs enough free SPU RAM for that copy; a
+rejected or cancelled preparation keeps the current sound. Save to presets or
+export an SPU instrument to retain the edited ADPCM and its tuning.
+
+Software morph remains a **112-sample cycle** feature. Its enable control is
+disabled for a full sample, so it cannot silently replace the imported sound
+with Sine. Choosing a shape explicitly creates a new short cycle and restores
+cycle drawing and Morph. PSF / Code Live observations remain read-only; PSF
+Live previews still use only the first four packets. Noise does not display
+its silent support loop.
 **Audio** sets the root note and looping option for recordings loaded from
 Menu. **PSF / VAB** lists opened PlayStation sound banks and extracts supported
 banks from PSF sets. Tab changes keep sounding notes and the current settings.
@@ -136,7 +157,29 @@ and `await file()` for project resources. **Save to presets** beside Instrument
 name, or **Save sound** in Files, writes the current edited sound and its sample
 to `/presets/<instrument name>.spu.json`. Change **Instrument name** before saving
 to choose a name. Existing files are kept; repeated names get `(2)`, `(3)`, etc.
-Saving opens Files and selects the new preset. Select a saved JSON to apply it.
+Saving opens Files and selects the new preset without changing Keyboard / Code
+mode, editor focus or the current performance. Selecting a file also keeps the
+current mode: choose **Code** when you want to see or edit its text. Selecting a
+saved sound JSON applies it, and its text is prepared in the shared editor. JSON
+and other text edits save locally; **Run / Apply** are available only for
+JavaScript. Select a sound JSON again to apply its updated settings.
+
+The **Preset** selector beside Instrument name lists standard VAB Program / Tone
+choices and supplemental SPU JSON under `/presets`, including nested folders.
+VAB choices load directly from the bank, without requiring a JSON copy. Choose
+one to load it without changing Keyboard / Code mode. Files additions, JSON
+edits, rename/delete and project restoration update this list; an invalid draft
+is kept in Files for editing but is not offered as a playable preset. Selection
+releases the control's focus so musical keys work again. Saving alone does not
+mark the new preset as loaded.
+
+Right-click a file, folder or the Files background for **Duplicate**, **Rename**,
+**Delete**, **New instrument**, **New JavaScript file** and **New folder**.
+Shift+F10 or the Context Menu key also opens these actions. Duplicate keeps
+nested files and empty folders, uses a free `-copy` name, and keeps the current
+sound and performance. New instrument saves the current edited sound under the
+chosen `.spu.json` path. Opening the menu itself does not load or play anything.
+Escape or an outside click closes it.
 Recalling an identical loaded ADPCM sample reuses it, including its tuning and
 loop settings, so switching saved sounds does not keep consuming SPU RAM.
 Only explicitly saved sounds become preset files; opening a bank does not
@@ -193,12 +236,69 @@ remain available in [Playground](../playground/index.html?mode=ps1).
 
 ## PS1 sound banks
 
-Choose **Menu → Import → VAB / VH + VB…**. Select one complete `.vab`, or
+Use **Load VAB / VH + VB…**, **Load PSF set…** or **Open PSF folder…** at the
+top of the **PSF / VAB** tab. The same file pickers are also available in
+**Menu → Import**. Select one complete `.vab`, or
 select its matching `.vh` and `.vb` together. Standard Sony versions 6 and 7
 are supported. Opening a bank lists its Tones without changing the current
 instrument. Select a Tone and choose **Load selected Tone**, then play the
 keyboard. **Menu → Export → Instrument · SPU JSON** stores the imported sample and settings in the usual
 `.spu.json` format.
+
+Beside **Sound bank**, **Save bank to presets** keeps the entire original standard
+VAB and supplemental JSONs for its available Tones under Files / presets.
+**Save selected Tone to preset** beside Load selected Tone creates a standard
+VAB containing only that Tone, plus its JSON. Its original Program ID remains;
+the packed Tone and sample are numbered 0 and 1. Neither operation needs an audio
+context or loads samples into SPU RAM: your edited sound, held notes, running
+Code and PSF playback / Pause position are kept. Existing files are never
+overwritten, and you can load the results from the **Preset** selector.
+Full-bank export retains the original header, body prefix, sample padding,
+Program / Tone attributes and unsupported Tones. A split VH + VB becomes one
+combined VAB. A single-Tone VAB copies the original master, Program / Tone
+attributes and complete bounded sample. Neither export re-encodes ADPCM.
+Unavailable Tones are skipped only for JSON, with their reasons.
+
+Direct VAB selection retains the original ADPCM, loop, ADSR and tuning, applying
+the existing volume / pan approximation. Its reverb send uses the current
+Synth shared reverb; VAB has no shared effect configuration. Supplemental JSONs
+capture that shared setting at save time (Off before audio is enabled), with
+PMON, Noise and Software morph Off. The usual Save to presets command still
+keeps the current edited instrument and Tetorica settings as JSON. A bank can
+expand into many JSON copies of a shared sample; if VAB + JSON together exceed
+the 16 MiB project limit, no presets are added. Save individual Tones or start a
+fresh project. Export a saved `.vab` from Files to reuse it outside Tetorica.
+
+### Use a VAB with the SPU API
+
+VAB is an asset format, separate from the chip's register / sample API. The
+shipped browser module exposes `readVab`, `prepareVabTone` and `exportVab`:
+
+In this Synth's **Code** tab, first choose a VAB Tone from **Preset**, then use
+`const ps1 = await useSoundChip("ps1")` and `ps1.noteOn(...)` as usual; Code
+borrows the selected instrument. The following module example is for your own
+application, when it needs to choose and load a Tone programmatically.
+
+```js
+import {readVab, prepareVabTone} from './synth-spu/spu_synth_vab.js';
+
+// ps1 is an existing SPU client or Ps1Synth; no Tetorica JSON is required.
+async function loadVabTone(ps1, bytes, program, tone, channel = 0) {
+  const bank = readVab(bytes);
+  const index = bank.tones.findIndex(t => t.program === program && t.index === tone);
+  const sound = prepareVabTone(bank, index);
+  const sample = await ps1.loadADPCM(sound.adpcm, sound.options);
+  await ps1.setPreset(channel, {...sound.preset, sample});
+  return sample;
+}
+```
+
+Read the VAB bytes from `fetch(...).arrayBuffer()` or your application's files,
+then call `loadVabTone`. `channel` is zero-based; normal `noteOn` / `noteOff`
+methods play it. `exportVab(bank)` preserves the complete original bank, while
+`exportVab(bank, {toneNumber: index})` extracts a one-Tone bank. These helpers
+currently ship with Playground / Synth source; they are **not yet published
+as npm exports**. The npm SPU API already provides `loadADPCM` / `setPreset`.
 
 For **PSF1 / MiniPSF**, choose **Menu → Import → PSF set…** and select the song and all
 referenced PSFLib files together, or use **PSF folder…** in the same menu to retain library
@@ -210,24 +310,150 @@ the loaded set. Selecting a song does not play it. Select a **PSF entry** and ch
 **Resume** and retains the unplayed samples; **Stop song** returns to the
 beginning. File selection never starts audio. Master and the output monitor
 also apply to the song. The separate Play! HLE player needs no external BIOS;
-it keeps the edited SPU sample and settings intact. Playing the keyboard,
-editing the instrument, running Code or **Stop all sound** stops the preview.
+it keeps the edited SPU sample and settings intact. While the song is running,
+playing the keyboard or editing the instrument stops the preview. Loading another
+instrument, **Reset instrument**, running Code or **Stop all sound** also stops it.
+While paused in **PSF CH** view with **Live On**, the keyboard temporarily auditions the selected
+CH using the same ADPCM / Reference key or Noise Clock rules as Capture, keeping the song,
+frozen source display and edited instrument. Choose **Synth · edit and play**
+to play and edit your instrument while keeping the song paused. Changing CH or
+Reference key releases the previous temporary notes. Resume silences the
+audition and restores the latest edited instrument bank before continuing the same song
+position. Normal ADPCM and Noise are supported. PMON carriers, including
+Noise with PMON, show a reason without leaving Pause. Temporary audition does not save or replace a preset;
+choose Capture to make that sound editable and permanent.
 Selecting a different accepted entry also stops the old song. Failed imports
-keep the previous selection. This first version has no song CH Live display,
-Capture or seeking. PSF2 is not supported. Compatibility depends on the HLE
+keep the previous selection. **Live from PSF** is on by default. **View / keyboard**
+explicitly selects **Synth · edit and play** or **PSF CH 1–24**. Choose a PSF CH
+to observe that physical voice in the existing **PCM / ADSR / FX** panels without
+changing the song or the edited instrument. Observations follow the output
+position, up to 20 updates/s. A compact row of 24 numbered buttons shows sampled
+Core active / ENV; click one to select that channel. These are activity indicators,
+not output meters: even a silent modulator with zero voice volume can light.
+The underline shows ENV and turns amber when Gate is Off while the voice remains
+active. Pause freezes all channels; choosing another CH
+while paused inspects that same moment. Synth view shows the edited instrument
+without changing Live or the song's activity indicators; no numbered CH is
+highlighted in this view. Clicking any CH number, including the last selected
+one, returns to that PSF channel's display and paused audition. Selecting a PSF
+CH enables Live if it was Off. Turning Live Off selects Synth and stops acquiring
+observations; turning it On returns to the remembered PSF CH. While paused in
+**Synth · edit and play**, PCM, ADSR, Reverb, Morph, Noise and PMON controls change
+only the edited instrument, keeping the original song position and frozen CH state.
+Switch to a PSF CH to compare its original sound, then back to Synth to continue
+with your latest edits. **Resume** continues the original song from the paused position.
+Edits during song playback and loading another preset, VAB Tone or audio sample
+still stop the song. Stop also returns
+to the editor. Pause and choose **Capture to Synth** to edit or save an ADPCM or Noise channel. PSF2 is not supported. Compatibility depends on the HLE
 driver environment, so not every game's PSF is guaranteed to play correctly.
-The initial player supports basic ADPCM, ADSR and reverb. Its Play! SPU does
-not reproduce Noise, PMON or the hardware main / reverb output-volume registers;
-those parts of a song can sound different or be missing. The Synth's Master
-still controls the final bus. These are song-player limitations, not changes
-to the existing keyboard SPU or its supported effects. Treat this as a preview,
-not an exact PS1 recording reference.
+The active song SPU uses the same fixed MAME-derived DSP sources as the
+keyboard Synth: ADPCM, four-point Gaussian interpolation, ADSR, Noise, PMON,
+hardware main / reverb output volumes and shared reverb. The CPU's SPU register
+accesses, RAM transfers and IRQ use this same instance; the old Play! SPU does
+not contribute audio. Song output retains hardware mixing, without the
+keyboard's software headroom or click guard. The Synth's Master controls the
+final bus.
+
+The **seek bar** moves only when you release it (or release an arrow key).
+Arrows move the draft by one second; Shift uses ten seconds. The player starts
+a separate candidate machine from the beginning and silently renders through
+the requested time, keeping the original position until the candidate is ready.
+Seeking from Pause remains paused; seeking while playing continues playback
+from the new position. Seeking an entry that is stopped prepares it at the
+requested position in Pause. Use **Cancel seek** or Escape while seeking to
+return to the previous position and playback state. Stop and source changes
+discard the candidate. Failure also keeps the original position and instrument.
+
+Progress is displayed while advancing. The first version supports target
+positions up to 30 minutes and a 30-second processing budget, checked between
+small native render slices; a native slice itself cannot be interrupted.
+Early PCM is discarded without scheduling audio, retaining a full-song buffer
+or collecting Live/RAM history along the way. Only one candidate is prepared
+at a time. This is forward execution from the beginning, with no seek checkpoint
+cache. The regular bounded playback lookahead is kept after arrival.
+
+`length` plus `fade` tags provide a **reference range**, not an enforced end or
+fade. Missing or ambiguous length tags show **?** and use an expanding five-minute
+slider window, within the seek limit. The current playback time stays separate
+from a dragged draft. At arrival, Live and Capture use the exact new frame;
+the selected CH, Dry listening preference, view and edited Synth sound are kept.
+
+**Selected CH only · Dry** is a Tetorica software listening helper, initially
+Off. It auditions the selected channel's dry output, including its voice and
+main volumes. Every voice, PMON source, the shared Noise generator and the
+original shared reverb continue processing. The shared reverb return belongs
+to the complete song and is heard in the normal full mix; it is excluded from
+the single-channel Dry output. Off restores that original full mix and reverb.
+This mode is independent of Live, does not rewrite voice registers and does
+not change Capture or paused keyboard audition. Channel or mode changes use
+a short fade and the same retained song position. Full PCM and all 24 dry
+stems are retained only for the bounded lookahead (about 2 MiB of additional
+dry PCM with the default settings); only the selected stem needs an AudioBuffer.
+
+The Live PCM graph is a read-only preview of up to 112 ADPCM samples from the
+programmed Start address, decoded with zero initial history. It is not the
+currently audible waveform, a full sample extraction or an inferred root note.
+Start / Repeat are programmed addresses, not playback cursors. Gate shows the
+last CPU KON / KOFF request; Core active is separate, and ENDX can also mark a
+looping block. ADSR stage widths remain illustrative. Noise and PMON show the
+selected voice's hardware flags; the Noise clock, main volumes and reverb are
+shared. Software PMON waveform / ratio / depth / decay helpers cannot be inferred
+from a song, so those controls are hidden in PSF Live. Unrecognized reverb
+registers are labelled **Custom**, preserving the actual shared returns and send
+flag. Instrument saves are disabled in PSF CH view; Capture first, or choose
+**Synth · edit and play** to save your edited instrument.
+
+For ADPCM, **Capture to Synth** copies the paused channel’s original bytes through
+its END packet, loop, ADSR, voice volumes and reverb-send flag from the matching
+historical SPU RAM snapshot. It does not re-encode that ADPCM. Choose a
+**Reference key** (C4 by default): that key reproduces the captured raw PITCH
+code, rather than estimating the sample’s original root. Capture creates a
+normal instrument for a fresh key press; it does not freeze the current sample
+cursor, envelope stage or the rest of the song. Your editor’s shared reverb is
+kept; song master volume and custom shared effects are not copied. Software
+morph and PMON are disabled in the captured instrument. ADPCM captures also
+disable Noise; Noise captures enable it.
+
+Capture requires **Pause**, **Live On** and an available same-time RAM snapshot.
+ADPCM needs nonzero Pitch, a valid END packet and a supported contiguous loop.
+PMON carriers (including Noise with PMON) are rejected before changing the song
+or edited instrument. Successful Capture keeps the song paused at the same
+position and channel, selects **Synth · edit and play** and opens editable Synth mode without
+playing a note. Use the keyboard to try the captured instrument, then **Resume**
+to continue the original song. Live stays On and the frozen CH activity remains
+visible; choose a PSF CH to inspect or audition the original sound again.
+Continue editing in Synth while keeping Pause, or switch to a PSF CH to compare
+the source. Loading another instrument or **Reset instrument** still stops the song.
+Use **Save to presets** or export **Instrument · SPU JSON** to keep the capture.
+For Noise, Capture copies the shared **Noise Clock**, ADSR, left/right voice
+levels and reverb send. **Reference key** is disabled: every key triggers the
+envelope with the same Clock, rather than assigning a note pitch. The portable
+preset contains a fixed 64-byte silent loop solely to support Noise playback;
+no source ADPCM is extracted, and source PITCH / Start / Repeat do not set its
+noise character. A new note starts a fresh envelope; the running Noise LFSR
+phase is not copied. The editor’s shared reverb is retained. PMON carriers
+remain unsupported, including Noise voices with PMON enabled.
+
+Repeated captures with identical bytes and tuning reuse the existing sample.
+Live keeps a bounded history of 512-KiB RAM copies with its observations
+(about 3.5 MiB at the default settings); Live Off releases that history, keeping
+at most the frozen paused snapshot needed to restore the same point.
+
+CPU execution still uses Play! HLE and basic-block timing; it is not cycle-exact
+PS1 emulation. Volume sweeps, voice start / repeat addresses aligned only to
+8 bytes rather than 16, and unsupported RAM transfer modes fail explicitly.
+Those limitations can prevent some game drivers from playing. Treat this as a
+preview, not an exact PS1 recording reference. The player checks its WASM ABI
+before creating a machine, so an older cached player cannot silently fall back
+to the previous SPU. Readable sources, both licenses and a standalone rebuild
+recipe are included in the distribution's `sources/psf-player/`.
 
 To extract an instrument, choose **Extract VAB** beside **Play / Pause / Stop**
 for the selected song. This opens **PSF / VAB** and shows progress and the bank
-results. Select a **Sound bank** and **Tone**, choose **Load selected Tone**, then
-use **Save to presets** to keep that sound in Files. You can try another Tone
-and return to either saved preset later. This shares Playground's local PSF parser: CRC and
+results. Select a **Sound bank** and **Tone**, then **Load selected Tone** to
+audition it, **Save selected Tone to preset** to keep it directly, or
+**Save bank to presets** to keep every available Tone. The **Preset** selector
+loads saved sounds later. This shares Playground's local PSF parser: CRC and
 zlib validation, library resolution and RAM overlays precede standard VAB
 detection. Opening files or extracting banks leaves the current instrument
 and sounding notes in place. Missing dependencies and malformed input show an
@@ -283,8 +509,9 @@ each sounding note's current envelope stage without resetting its level or
 sample position. Attack changes do not restart a note already in Sustain;
 Sustain Level is the Decay target. With the option off, the running note keeps
 its ADSR through release, and the next Note On reads the latest instrument
-settings. PCM edits update the common cycle. With the option on, held keyboard
-notes restart with the edited waveform; with it off, they are not retriggered.
+settings. Short-cycle PCM edits update the common cycle. With the option on,
+held keyboard notes restart with the edited waveform; with it off, they are
+not retriggered. Full-sample edits stop held notes when the prepared ADPCM is applied.
 Because the sample RAM is shared, this does not preserve the old waveform for
 notes that are already playing.
 
@@ -306,7 +533,10 @@ The application uses the existing generated PS1 WASM and JavaScript modules;
 there is no second chip implementation. Audio blocks send no state messages.
 Normal UI snapshots follow explicit edits and notes. While Code Live is enabled,
 one passive observation request at a time runs at up to 20 updates/s, with stale
-responses discarded after Stop, Live Off or an engine replacement.
+responses discarded after Stop, Live Off or an engine replacement. PSF Live
+uses read-only snapshots captured during the existing renderer's work and
+selected against the audible output offset. It does not run a second CPU or
+SPU, add another audio path, or send instrument-setting commands.
 
 ```sh
 npm run test:spu-synth

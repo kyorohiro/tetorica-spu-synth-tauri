@@ -8,7 +8,7 @@
     <title>Tetorica SPU Synth</title>
     <link rel="icon" href="./icon.png" type="image/png" sizes="any">
     <link rel="apple-touch-icon" href="./icon.png">
-    <link rel="stylesheet" href="./synth.css?v=spu-split-vab-1">
+    <link rel="stylesheet" href="./synth.css?v=spu-bank-presets-1">
   </head>
   <body>
     <main>
@@ -41,11 +41,11 @@
                   <section class="synth-menu-section">
                     <h2>Import</h2>
                     <div class="synth-menu-actions">
-                      <button id="loadVab" type="button" data-spu-open-panel="bank" data-close-synth-menu>VAB / VH + VB…</button>
+                      <button id="loadVab" type="button" data-spu-import-input="vabFileInput" data-spu-open-panel="bank" data-close-synth-menu>VAB / VH + VB…</button>
                       <input id="vabFileInput" class="file-input" type="file" accept=".vab,.vh,.vb" multiple aria-label="Choose a VAB or matching VH and VB files">
-                      <button id="loadPsf" type="button" data-spu-open-panel="bank" data-close-synth-menu>PSF set…</button>
+                      <button id="loadPsf" type="button" data-spu-import-input="psfFileInput" data-spu-open-panel="bank" data-close-synth-menu>PSF set…</button>
                       <input id="psfFileInput" class="file-input" type="file" accept=".psf,.psf1,.minipsf,.minipsf1,.psflib,.psf1lib" multiple aria-label="Choose PSF and related PSFLib files together">
-                      <button id="loadPsfFolder" type="button" data-spu-open-panel="bank" data-close-synth-menu>PSF folder…</button>
+                      <button id="loadPsfFolder" type="button" data-spu-import-input="psfFolderInput" data-spu-open-panel="bank" data-close-synth-menu>PSF folder…</button>
                       <input id="psfFolderInput" class="file-input" type="file" multiple webkitdirectory aria-label="Choose a folder containing a PSF set">
                       <button id="loadAudio" type="button" data-spu-open-panel="audio" data-close-synth-menu>Audio sample…</button>
                       <input id="audioFileInput" class="file-input" type="file" accept="audio/*" aria-label="Choose an audio sample">
@@ -95,10 +95,30 @@
             <button id="psfPauseSong" type="button" disabled>Pause</button>
             <button id="psfStopSong" type="button" disabled>Stop song</button>
             <button id="extractPsf" type="button" title="Extract VAB banks from the selected PSF and show its Bank / Tone list." disabled>Extract VAB</button>
-            <output id="psfSongPosition" aria-label="PSF playback position">0:00</output>
-            <details class="spu-code-help"><summary aria-label="About PSF playback">?</summary><p>Preview the selected PSF1 / MiniPSF using a separate Play! HLE engine, with no external BIOS. Pause keeps the exact position; Stop returns to the beginning. Your edited instrument is kept. Keyboard, Code or instrument edits stop the song. This Preview renders basic ADPCM / ADSR / reverb; song Noise, PMON and hardware main / reverb output-volume registers are not reproduced yet. Master still works. Song CH Live / Capture and PSF2 are not supported. VAB files contain instruments, not songs.</p></details>
+            <input id="psfSongSeek" type="range" min="0" max="300" step="0.001" value="0" aria-label="PSF playback position; release to seek" disabled>
+            <output id="psfSongPosition" aria-label="PSF playback position">0:00 / ?</output>
+            <progress id="psfSeekProgress" max="1" value="0" aria-label="PSF silent seek progress" hidden></progress>
+            <button id="psfSeekCancel" type="button" hidden disabled title="Cancel seeking and return to the previous position.">Cancel seek</button>
+            <details class="spu-code-help"><summary aria-label="About PSF playback">?</summary><p>Preview the selected PSF1 / MiniPSF using a separate Play! HLE engine, with no external BIOS. Pause keeps the exact position; Stop returns to the beginning. Release the seek bar to silently advance a separate machine from the beginning; your previous position is kept until it succeeds. Pause stays paused; playing seeks continue playing; a stopped entry seeks into Pause. Cancel seek or Escape restores the previous position and state. Progress is shown. The initial limit is 30 minutes and 30 seconds of processing, checked between bounded native render slices. length + fade tags are reference range hints, without automatic end/fade; unknown duration is shown as ? with an expanding five-minute range. No long seek PCM/checkpoint cache is retained. Your edited instrument is kept. During playback, keyboard, Code or instrument edits stop the song. While paused in Synth view, PCM, ADSR, reverb, Morph, Noise and PMON edits keep the source position and frozen CH state. Switch to a PSF CH to compare, then return to Synth; Resume continues the original song with your edited sound kept. Loading another instrument, Reset instrument, Code or explicit Stop still stops the song. View / keyboard explicitly selects a PSF CH or Synth · edit and play. While paused, PSF CH view auditions that channel temporarily; Synth auditions your edited instrument. Capture copies one CH into Synth and selects that view, keeping the original song paused and its CH activity visible. Choose a PSF CH to return to source observation or audition. Save to presets keeps the copied instrument in Files. Neither keyboard mode leaves Pause. CH / Reference changes release the temporary notes, and Resume restores the editor before continuing the song. The song uses the Synth’s MAME-derived SPU DSP for ADPCM, ADSR, Noise, PMON, main / reverb volumes and reverb, with hardware mixing. CPU timing remains HLE, not cycle-exact. Unsupported volume sweeps, 8-byte-only voice addresses and transfer modes report an error. Master still works. Live shows the selected song channel in the PCM / ADSR / FX panels; Pause freezes that observation. Pause to Capture an ADPCM or Noise channel into Synth. Noise copies Clock, ADSR, voice levels and send; keys trigger envelopes rather than changing Noise pitch. Running Noise phase is not copied. Reference key reproduces its PITCH code without inferring a root note; a new key press starts a fresh envelope. PMON carriers, including Noise with PMON, and PSF2 are not supported. VAB files contain instruments, not songs.</p></details>
           </div>
           <p id="psfPlaybackStatus" class="subtext" role="status" aria-live="polite">Open a PSF set and choose an entry to play.</p>
+        </section>
+
+        <section id="spuCodeLiveTools" class="spu-code-live-tools" aria-label="Code observations" hidden>
+          <div class="spu-code-live-row">
+            <label><span id="spuLiveSourceLabel">Code view</span> <select id="spuLiveChannel" aria-label="Code channel to observe"><option id="spuLiveSynthOption" value="synth" hidden disabled>Synth · edit and play</option></select></label>
+            <label id="spuPsfMonitorTools" class="check-control" hidden><input id="spuPsfMonitorEnabled" type="checkbox" aria-describedby="spuLiveHelpText"> Selected CH only · Dry</label>
+            <label class="check-control"><input id="spuLiveEnabled" type="checkbox" checked> <span id="spuLiveEnabledLabel">Live from Code</span></label>
+            <div id="spuPsfCaptureTools" class="spu-psf-capture-tools" hidden>
+              <label>Reference key <select id="spuPsfReferenceKey" aria-label="PSF audition and capture reference key" title="This key will reproduce the selected PSF PITCH code for paused keyboard audition and Capture. It does not infer the sample’s original root note."><option>C2</option><option>C3</option><option selected>C4</option><option>C5</option><option>C6</option></select></label>
+              <button id="spuPsfCapture" type="button" disabled aria-describedby="spuPsfCaptureHint">Capture to Synth</button>
+              <span id="spuPsfCaptureHint" class="spu-sr-only">Pause with Live enabled to capture ADPCM or Noise into the edited instrument.</span>
+            </div>
+            <details class="spu-code-help"><summary id="spuLiveHelpLabel" aria-label="About Code Live">?</summary><p id="spuLiveHelpText">Read-only observations of the same physical SPU, up to 20 updates/s. Choose a channel to inspect without changing its sound. Live Off restores the edited instrument display while Code continues. Editing that instrument stops Code first. Stop restores your samples and settings. Intermediate register writes can be missed.</p></details>
+          </div>
+          <div id="spuPsfChannelActivity" class="spu-psf-channel-activity" role="group" aria-label="PSF channel activity, not output level" hidden></div>
+          <p id="spuLiveStatus" role="status">Run Code to observe its channels.</p>
+          <p id="spuLiveReadout"></p>
         </section>
 
         <section id="spuMonitor" class="spu-monitor" aria-label="Instrument display">
@@ -126,16 +146,6 @@
           </div>
         </section>
 
-        <section id="spuCodeLiveTools" class="spu-code-live-tools" aria-label="Code observations" hidden>
-          <div class="spu-code-live-row">
-            <label>Code view <select id="spuLiveChannel" aria-label="Code channel to observe"></select></label>
-            <label class="check-control"><input id="spuLiveEnabled" type="checkbox" checked> Live from Code</label>
-            <details class="spu-code-help"><summary aria-label="About Code Live">?</summary><p>Read-only observations of the same physical SPU, up to 20 updates/s. Choose a channel to inspect without changing its sound. Live Off restores the edited instrument display while Code continues. Editing that instrument stops Code first. Stop restores your samples and settings. Intermediate register writes can be missed.</p></details>
-          </div>
-          <p id="spuLiveStatus" role="status">Run Code to observe its channels.</p>
-          <p id="spuLiveReadout"></p>
-        </section>
-
         <section class="instrument-workspace" aria-label="Instrument editor">
           <div class="instrument-tabs" role="tablist" aria-label="Instrument settings">
             <button id="instrumentTab-pcm" type="button" role="tab" data-spu-editor-tab="pcm" aria-controls="instrumentPanel-pcm" aria-selected="true" tabindex="0">PCM</button>
@@ -160,15 +170,22 @@
           </section>
           <section id="instrumentPanel-bank" class="chip-section audio-panel" role="tabpanel" aria-labelledby="instrumentTab-bank" hidden>
             <h3>PS1 sound bank</h3>
+            <div class="sample-actions" role="group" aria-label="Open a sound bank or PSF set">
+              <button id="loadVabInPanel" type="button" data-spu-import-input="vabFileInput">Load VAB / VH + VB…</button>
+              <button id="loadPsfInPanel" type="button" data-spu-import-input="psfFileInput">Load PSF set…</button>
+              <button id="loadPsfFolderInPanel" type="button" data-spu-import-input="psfFolderInput">Open PSF folder…</button>
+            </div>
             <p class="subtext">Open a standard Sony VAB (version 6 or 7), matching VH + VB files, or a PSF1 / MiniPSF set with all its PSFLib files. Opening or extracting a bank keeps the current instrument.</p>
             <p class="subtext">Use Extract VAB beside the song controls to list its banks, then choose a Tone below.</p>
 
             <div class="sample-settings">
               <label>Sound bank <select id="vabBank" aria-label="Sound bank" disabled></select></label>
+              <button id="saveVabBank" type="button" disabled title="Save the original standard VAB and separate JSONs for its available Tones in Files / presets, keeping the current sound.">Save bank to presets</button>
             </div>
             <div class="sample-settings">
               <label>Tone <select id="vabTone" aria-label="VAB Tone" disabled></select></label>
               <button id="loadVabTone" type="button" disabled>Load selected Tone</button>
+              <button id="saveVabTone" type="button" disabled title="Save this Tone as a one-Tone standard VAB and a JSON in Files / presets, without loading it into the Synth.">Save selected Tone to preset</button>
             </div>
             <p id="vabAvailability" class="subtext" hidden></p>
             <details id="vabUnavailableDetails" class="vab-reasons" hidden>
@@ -176,12 +193,14 @@
               <ul id="vabUnavailableReasons"></ul>
             </details>
             <p id="vabStatus" class="subtext" role="status" aria-live="polite">No sound bank opened.</p>
+            <details class="spu-code-help"><summary aria-label="About saving bank presets">?</summary><p>Both commands save standard VAB and supplemental SPU JSON in Files / presets. Save bank to presets keeps the complete original VAB, plus one JSON per available Tone. Unavailable Tones remain in the original VAB and are skipped only in JSON. Save selected Tone to preset makes a one-Program / one-Tone / one-Sample VAB, with Tone 0 / Sample 1 and the original Program ID, plus its JSON. Original ADPCM and VAB attributes are kept; no audio is re-encoded. Saving keeps your edited sound and song position and does not load SPU RAM. Preset below lists each VAB's available Program / Tone directly, and JSON separately; VAB loading does not need JSON. JSON can also retain Tetorica settings: direct Tone copies use your current shared reverb with PMON, Noise and Morph Off. Existing files are kept. If both formats exceed the 16 MiB project limit, nothing is added; save fewer Tones or use a fresh project.</p></details>
             <p class="subtext">For PSF instruments, choose an entry and extract its banks, then select a bank and Tone. Unavailable Tones show a reason. Static extraction supports contiguous VAB banks and separated VH / VB when the complete sample data has one unambiguous match. Custom or runtime-packed banks may not be found. Song playback is independent of bank extraction. PSF2 is not supported. Extract ZIP archives before selecting their files or folder.</p>
             <p class="subtext">Imports the original ADPCM, loop, ADSR and tuning. One Tone plays across the keyboard; key zones, layers and driver vibrato/portamento are not applied. Volume and pan are approximations. Reverb send uses the current shared reverb settings. Loading a Tone stops notes and turns off PMON, Noise and Software morph.</p>
           </section>
         </section>
 
         <section class="instrument-toolbar" aria-label="Instrument files">
+          <label class="instrument-preset-control" for="spuPresetSelect">Preset <select id="spuPresetSelect" aria-label="Saved SPU preset" disabled><option value="">No playable presets</option></select></label>
           <label class="instrument-name-control" for="instrumentName">Instrument name <input id="instrumentName" type="text" maxlength="80" value="Sine" autocomplete="off"></label>
           <div class="preset-actions">
             <button id="saveSoundToFiles" type="button" title="Save the current instrument and its sample in Files / presets. Instrument name sets the file name; existing files are kept.">Save to presets</button>
@@ -227,7 +246,7 @@
             <div class="spu-code-toolbar"><button id="synthCodeRunButton" class="primary" type="button">Run</button><button id="synthCodeApplyButton" type="button" disabled>Apply</button><button id="synthCodeStopButton" type="button" disabled>Stop</button><span id="synthCodeState" role="status">Idle</span></div>
             <p class="spu-code-caption">Software performance · the same SPU and samples as the controls above. Run: Ctrl/Cmd+Enter · Apply: Ctrl/Cmd+Shift+Enter.</p>
             <div id="synthCodeEditorHost" class="spu-code-editor-host"></div>
-            <textarea id="synthCodeEditor" class="spu-code-editor" spellcheck="false" aria-label="SPU performance JavaScript" rows="12" readonly></textarea>
+            <textarea id="synthCodeEditor" class="spu-code-editor" spellcheck="false" aria-label="SPU project file contents" rows="12" readonly></textarea>
             <p id="synthCodeEditorNote" class="subtext">Code is saved in Files. Loading a project never runs it automatically.</p>
             <pre id="synthCodeError" class="spu-code-error" role="alert"></pre>
             <details class="spu-code-console"><summary>Console</summary><pre id="synthCodeLog" aria-live="polite"></pre></details>
@@ -245,6 +264,6 @@
       </footer>
       <noscript><p class="noscript-message">JavaScript is required to run Tetorica SPU Synth.</p></noscript>
     </main>
-    <script type="module" src="./synth.js?v=spu-split-vab-1"></script>
+    <script type="module" src="./synth.js?v=spu-bank-import-buttons-1"></script>
   </body>
 </html>

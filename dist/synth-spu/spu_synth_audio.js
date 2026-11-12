@@ -9,8 +9,8 @@ import {SOUNDCHIP_MIXER_PRESETS} from '../js/soundchip_mixer_presets.js';
 export const SPU_SYNTH_CALIBRATED_GAIN = SOUNDCHIP_MIXER_PRESETS.calibrated.factoryDefaults.kinds.find(entry => entry.name === 'ps1').volume;
 export const SPU_SYNTH_OUTPUT_GAIN = SPU_SYNTH_CALIBRATED_GAIN * SPU_SYNTH_MIX_HEADROOM;
 const initialWaveform = () => preparePs1Waveform(Array.from({length:112}, (_, i) => .65 * Math.sin(2 * Math.PI * i / 112)));
-const CODE_METHODS=['loadADPCM','getPreset','setPreset','setChannel','setEnvelope','setReverb','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff','allNotesOff','reset','getState','snapshot'];
-const READ_METHODS=new Set(['inspect','getState','getPreset','getInstrument','snapshot','findADPCM']);
+const CODE_METHODS=['loadADPCM','getPreset','setPreset','setChannel','setEnvelope','setReverb','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff','allNotesOff','reset','getState','snapshot','_setAuditionNoise'];
+const READ_METHODS=new Set(['inspect','getState','getPreset','getInstrument','getInstrumentSample','snapshot','findADPCM']);
 const codeCancelled=()=>{const error=new Error('SPU Code session stopped');error.name='AbortError';return error;};
 
 /** A standalone Web Audio instrument. Startup creates a suspended context;
@@ -74,7 +74,7 @@ export async function createSpuAudio({onError = () => {}, onState = () => {}, vo
         if (!response.ok) throw new Error(`SPU WASM could not load (HTTP ${response.status})`);
         return response.arrayBuffer();
       }),
-      context.audioWorklet.addModule(new URL('./spu_synth_worklet.js?v=spu-split-vab-1', import.meta.url)),
+      context.audioWorklet.addModule(new URL('./spu_synth_worklet.js?v=spu-full-sample-edit-1', import.meta.url)),
     ]);
     node = new AudioWorkletNode(context, 'tetorica-spu-synth', {
       numberOfInputs:0, numberOfOutputs:1, outputChannelCount:[2],
@@ -146,8 +146,20 @@ export async function createSpuAudio({onError = () => {}, onState = () => {}, vo
             (!Number.isInteger(args[0])||args[0]<0||args[0]>23))throw new RangeError('PS1 SPU channel must be 0..23');
           return command('code',[metadata.session,method,args]).then(value=>{check();return value;});
         };
+        // A temporary performer may borrow the existing Code output gate.
+        // After its own acknowledged Stop it may reopen only the neutral
+        // route it restored, never a newer Code lease or editor operation.
+        let releasedGeneration=null;
+        client.ownsOutput=()=>{
+          try {assertOpen();}catch{return false;}
+          return codeOwner===owner&&owner.generation===codeGeneration ||
+            releasedGeneration!==null&&codeOwner===null&&codeGeneration===releasedGeneration;
+        };
         // The borrowed chip and context belong to the editor, not user Code.
-        client.dispose=()=>{check();return command('stop');};return client;
+        client.dispose=()=>{
+          check();const pending=command('stop'),generation=codeGeneration;
+          return pending.then(value=>{releasedGeneration=generation;return value;});
+        };return client;
       }).catch(error=>{if(codeOwner===owner)codeOwner=null;throw error;});
       return owner.promise;
     }
