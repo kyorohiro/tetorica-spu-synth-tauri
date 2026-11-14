@@ -52,14 +52,24 @@ Nativeでも音源生成はWebView内で行います。[転送改善と計測上
 ## ブラウザ版を更新する
 
 ```sh
-npm run import:release -- /path/to/tetorica_spu_synth_VERSION_itch.zip
+npm run import:release -- /path/to/tetorica_spu_synth_WEB_VERSION_itch.zip --version X.Y.Z
 npm test
 npm run dev
 ```
 
+`X.Y.Z`は今回のアプリ版（数字3区切り）です。ZIP名の`WEB_VERSION`とは一致不要です。
+`--version`を付けると`package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、
+`src-tauri/Cargo.lock`の自分のcrate、`src-tauri/tauri.conf.json`も揃えます。
+依存パッケージは更新せず、`release.lock.json`はWeb取り込み元を記録します。
+従来のように`--version`を省略すればアプリ版は変わりません。
+`--check`や`--record-local-changes`との併用はできません。
+リリース時は取り込み後に`sh deploy_mac.sh`等でビルドを確認してから、
+`dist/`、`release.lock.json`と上記5ファイルを最終commitに含め、tagを作成します。
+取り込み自体はビルド・commit・tag・pushを実行しません。
+
 root `index.html`と`synth-spu/synth.js`を含むStandalone SPU SynthのZIPを指定します。
 取り込み直後の`dist/`はZIPの原本です。`release.lock.json`はその全ファイルのSHA-256を保持します。
-両方を同じコミットへ含めてください。元ZIPのGit登録は不要です。
+取り込みで変更したファイルを同じコミットへ含めてください。元ZIPのGit登録は不要です。
 不正なZIPは取り込み前に拒否し、以前のdistとlockを保持します。
 Tauri用の保存・出力接続はローカル画面への追加scriptとして組み込みます。
 

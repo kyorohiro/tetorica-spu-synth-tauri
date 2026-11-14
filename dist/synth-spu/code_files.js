@@ -3,8 +3,8 @@ import {renderFileTree} from '../playground/playground_file_tree.js';
 import {transferVirtualFiles,isCheckpointPath} from '../js/tetorica_virtual_files/filesystem.js';
 import {normalizeVirtualPath} from '../js/tetorica_virtual_files/path.js';
 import {installSpuFileContextMenu} from './file_context_menu.js?v=spu-files-menu-1';
-import {readVab,prepareVabTone} from './spu_synth_vab.js?v=spu-bank-presets-1';
-import {createSpuCodeProject,createSpuProjectStore,readSpuProjectSound,isSpuCodePath,isSpuTextPath,SPU_PROJECT_MANIFEST,SPU_PROJECT_CODE_LENGTH,SPU_PROJECT_FILE_BYTES} from './code_project.js?spu-json-code=1';
+import {readVab,prepareVabTone} from './spu_synth_vab.js?v=ps1-vab-api-1';
+import {createSpuCodeProject,createSpuProjectStore,readSpuProjectSound,isSpuCodePath,isSpuTextPath,SPU_PROJECT_MANIFEST,SPU_PROJECT_CODE_LENGTH,SPU_PROJECT_FILE_BYTES} from './code_project.js?v=draft-reconnect-1';
 
 const inside=(path,directory)=>path===directory||path?.startsWith(directory+'/');
 const basename=path=>path.split('/').pop(),dirname=path=>path.slice(0,path.lastIndexOf('/'))||'/';
@@ -49,7 +49,7 @@ export function setupSpuCodeFiles({project=createSpuCodeProject(),getInstrument=
   const presetSelect=doc.getElementById('spuPresetSelect'),presetCache=new Map();let presetSignature='',deferPersistence=0,appliedPreset=null,presetOptions=new Map();
   if(!panel||!toggle||!workspace)throw Error('SPU Files mount is missing.');
   const win=doc.defaultView??globalThis,main=doc.querySelector?.('.spu-main'),listeners=[],expanded=new Map([['/presets',true],['/lib',true],['/data',true]]);
-  let code=null,busy=true,disposed=false,restoring=false,operation=0,editRevision=0,saveTimer=null,identity=workspaceId(),visibilityTouched=false;
+  let code=null,busy=true,disposed=false,restoring=false,persistenceReady=false,operation=0,editRevision=0,saveTimer=null,identity=workspaceId(),visibilityTouched=false;
   const make=(tag,id,text)=>{const node=doc.createElement(tag);if(id)node.id=id;if(text!==undefined)node.textContent=text;return node;};
   const listen=(node,type,fn,options)=>{node?.addEventListener(type,fn,options);listeners.push(()=>node?.removeEventListener(type,fn,options));};
   const heading=make('div');heading.className='spu-files-heading';
@@ -138,7 +138,7 @@ export function setupSpuCodeFiles({project=createSpuCodeProject(),getInstrument=
   }
   function setBusy(value,{lockMain=true}={}){busy=value;if(main)main.inert=Boolean(value&&lockMain);render();}
   async function persistCode({force=false}={}){
-    if(disposed||deferPersistence&&!force)return false;
+    if(disposed||!persistenceReady||restoring||deferPersistence&&!force)return false;
     try{return await store.write({...project.snapshot(),workspaceId:identity,filesVisible:!panel.hidden});}
     catch(error){report(Error(`Local save failed: ${error.message}. Export project to keep your files.`));return false;}
   }
@@ -155,7 +155,7 @@ export function setupSpuCodeFiles({project=createSpuCodeProject(),getInstrument=
     if(isSpuCodePath(path)){project.select(path);render();return await openInCurrentMode(path);}
     let sound=null,soundError=null;
     if(file.type==='text'&&/\.json$/i.test(path)){try{sound=readSpuProjectSound(file.data);}catch(error){soundError=error;}}
-    if(sound){setBusy(true);try{await onBeforeWorkspaceReplace();if(disposed||token!==operation)return false;await applyInstrument(sound,{isCurrent:()=>!disposed&&token===operation});if(disposed||token!==operation)return false;}finally{if(!disposed)setBusy(false);}}
+    if(sound){setBusy(true);try{if(disposed||token!==operation)return false;if(await applyInstrument(sound,{isCurrent:()=>!disposed&&token===operation})===false)return false;if(disposed||token!==operation)return false;}finally{if(!disposed)setBusy(false);}}
     if(sound)appliedPreset={kind:'json',path,data:file.data};
     project.select(path);render();schedule();
     if(file.type==='text')await openInCurrentMode(path);
@@ -171,8 +171,8 @@ export function setupSpuCodeFiles({project=createSpuCodeProject(),getInstrument=
     const saved=vabPreset(file);if(!saved.bank)throw Error('This VAB bank is unavailable.');
     prepareVabTone(saved.bank,toneNumber);const tone=saved.bank.tones[toneNumber];setBusy(true);
     try {
-      await onBeforeWorkspaceReplace();if(!current())return false;
-      await applyVabTone({bank:saved.bank,toneNumber,path,name:basename(path)},{isCurrent:current});if(!current())return false;
+      if(!current())return false;
+      if(await applyVabTone({bank:saved.bank,toneNumber,path,name:basename(path)},{isCurrent:current})===false)return false;if(!current())return false;
       appliedPreset={kind:'vab',path,data:saved.data,toneNumber};project.select(path);render();schedule();
       say(`Loaded ${basename(path)} · Program ${tone.program} · Tone ${tone.index}.`);return true;
     }finally{if(!disposed)setBusy(false);}
@@ -337,7 +337,7 @@ export function setupSpuCodeFiles({project=createSpuCodeProject(),getInstrument=
   };
   api.ready=Promise.resolve().then(async()=>{
     try{const saved=await store.read();if(disposed)return;if(saved){const candidate=createSpuCodeProject({snapshot:saved});
-      restoring=true;try{await onBeforeWorkspaceReplace();if(disposed)return;presetCache.clear();appliedPreset=null;project.restore(candidate.snapshot());identity=typeof saved.workspaceId==='string'?saved.workspaceId:identity;if(!visibilityTouched)setVisible(Boolean(saved.filesVisible));}finally{restoring=false;}}}
+      restoring=true;try{await onBeforeWorkspaceReplace();if(disposed)return;presetCache.clear();appliedPreset=null;project.restore(candidate.snapshot());identity=typeof saved.workspaceId==='string'?saved.workspaceId:identity;if(!visibilityTouched)setVisible(Boolean(saved.filesVisible));}finally{restoring=false;}}persistenceReady=true;}
     catch(error){report(Error('Local project restore failed; current files kept. '+error.message));}
     finally{if(!disposed)setBusy(false);}
   });if(main)main.inert=true;render();return api;

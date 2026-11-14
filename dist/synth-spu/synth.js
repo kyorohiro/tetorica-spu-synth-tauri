@@ -1,27 +1,28 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 kyorohiro.
-import {createSpuAudio} from './spu_synth_audio.js?v=spu-full-sample-edit-1';
-import {createSpuInstrumentPanel} from './spu_synth_panel.js?v=spu-full-sample-edit-1';
+import {createSpuAudio} from './spu_synth_audio.js?v=spu-code-parameters-6';
+import {createSpuInstrumentPanel} from './spu_synth_panel.js?v=psf-manual-3';
 import {createSpuOutputVisualizer} from './spu_synth_visualizer.js';
 import {createFretboardState, createFretboardLayout, renderFretboardControls, buildKeyboard, setInstrument, setFretPosition, setStringWindowIndex} from '../synth/synth_keyboard.js';
 import {createOfflineAudioDecoder} from '../js/audio_decode.js';
 import {readSpuInstrument, writeSpuInstrument, prepareAudioPcm, MAX_INSTRUMENT_BYTES} from './spu_synth_instrument.js?v=spu-split-vab-1';
 
 import {MAX_AUDIO_FILE_BYTES, prepareHostAudio} from './spu_synth_long_audio.js';
-import {MAX_VAB_FILE_BYTES, readVab, prepareVabTone,exportVab} from './spu_synth_vab.js?v=spu-bank-presets-1';
-import {PSF_FILES, readPsfFileSet, extractPsfVabs, psfRejectionSummary} from '../playground/playground_ps1_psf.js?v=psf-vab-export-1';
-import {setupSpuCodeHost} from './code_host.js?v=spu-bank-presets-1';
-import {SPU_PROJECT_FILE_BYTES} from './code_project.js?spu-json-code=1';
-import {prepareVabTonePreset,prepareVabBankPresets,vabTonePresetName} from './spu_bank_presets.js?v=spu-bank-presets-1';
+import {MAX_VAB_FILE_BYTES, readVab, prepareVabTone,exportVab} from './spu_synth_vab.js?v=ps1-vab-api-1';
+import {PSF_FILES, readPsfFileSet, extractPsfVabs, psfRejectionSummary} from '../playground/playground_ps1_psf.js?v=ps1-vab-api-1';
+import {setupSpuCodeHost} from './code_host.js?v=draft-reconnect-1';
+import {SPU_PROJECT_FILE_BYTES} from './code_project.js?v=draft-reconnect-1';
+import {prepareVabTonePreset,prepareVabBankPresets} from './spu_bank_presets.js?v=ps1-vab-api-1';
 import {createSpuCodeLive} from './code_live.js?v=spu-code-1';
 import {morphPcm} from './spu_synth_morph.js';
+import {createPs1InitSample} from '../js/ps1synth.js?v=ps1-oneshot-marker-1';
 import {setupSynthMenu} from '../synth/synth_menu.js';
-import {createPsfSongPreview} from './psf_song_preview.js?v=spu-psf-seek-1';
+import {createPsfSongPreview} from './psf_song_preview.js?v=psf-manual-1';
 import {setupPsfSeekControls} from './psf_seek_controls.js?v=spu-psf-seek-1';
 import {preparePsfSongSource} from './psf_song_source.js?v=spu-psf-playback-1';
-import {createPsfPlaybackCore} from './psf_playback_core.js?v=psf-channel-monitor-1';
-import {preparePsfVoiceCapture} from './psf_capture.js?v=psf-noise-capture-1';
-import {createPsfPausedAudition} from './psf_paused_audition.js?v=psf-noise-audition-1';
+import {createPsfPlaybackCore} from './psf_playback_core.js?v=psf-manual-2';
+import {preparePsfVoiceCapture} from './psf_capture.js?v=psf-marker-capture-1';
+import {createPsfPausedAudition} from './psf_paused_audition.js?v=psf-marker-audition-1';
 import {createPsfChannelActivity} from './psf_channel_activity.js?v=psf-synth-view-1';
 
 const $ = id => document.getElementById(id);
@@ -65,12 +66,15 @@ function pausedSelection() {
 function updateHeldStatus() {
   const preview=pausedAudition?.read();
   $('voiceAllocationStatus').textContent=preview?.active?`Paused PSF CH ${(psfSong?.read().liveVoice??0)+1} · temporary audition · ${preview.heldCount} held`:
+    playingPsfChannel()?`PSF CH ${psfSong.read().liveVoice+1} · keyboard shares this physical voice · ${[...notes.values()].filter(note=>note.owner==='psf-live').length} held`:
     `${state?.noise?.enabled?'24 voices · Noise · shared clock':state?.pmon?.enabled?'12 notes · paired PMON':'24 voices · round robin'} · ${state?.auditions?.length??0} held`;
 }
+function releasePsfKeys(){try{return psfSong?.releaseManual();}catch(error){report(error);return false;}}
 function stopPausedKeyboard({releaseEdited=false}={}) {
   const preview=pausedAudition?.read(),hadPreview=[...notes.values()].some(note=>note.owner==='psf-preview');
   if(!releaseEdited&&!preview?.active&&!preview?.error&&!hadPreview&&!pausedStopping)return pausedStopFence;
-  const hadEdited=pausedEditorAudition||[...notes.values()].some(note=>note.owner!=='psf-preview'),owner=audio;
+  const hadEdited=pausedEditorAudition||[...notes.values()].some(note=>!['psf-preview','psf-live'].includes(note.owner)),owner=audio;
+  if(releaseEdited)releasePsfKeys();
   for(const [source,note]of notes)if(releaseEdited||note.owner==='psf-preview')notes.delete(source);
   if(releaseEdited){epoch++;pausedEditorAudition=false;$('sustainToggle').checked=false;}
   updateKeys();
@@ -106,12 +110,16 @@ function psfOwnsLiveView() {
   return Boolean(song&&(song.playing||song.paused||song.resuming||song.seeking||song.seekPreparing));
 }
 function psfSeekBusy(){const song=psfSong?.read();return Boolean(song&&(song.seeking||song.seekPreparing));}
-function pausedEditorOwner() {
+function playingPsfChannel() {
+  const live=psfSong?.read();
+  return live?.playing&&!live.seeking&&!live.seekPreparing&&psfView==='channel'&&live.liveEnabled?live:null;
+}
+function retainedPsfEditorOwner() {
   const owner=psfSong,live=owner?.read();
-  if(!live?.paused||live.seeking||live.seekPreparing||psfView!=='synth'||codeHost?.isRunning())return null;
+  if(!(live?.paused||live?.playing)||live.seeking||live.seekPreparing||psfView!=='synth'||codeHost?.isRunning())return null;
   const action=psfActionEpoch,view=psfViewEpoch,entry=live.selection?.entry;
   return ()=>psfSong===owner&&psfActionEpoch===action&&psfViewEpoch===view&&psfView==='synth'&&
-    !codeHost?.isRunning()&&owner.read().paused&&!psfSeekBusy()&&owner.read().selection?.entry===entry;
+    !codeHost?.isRunning()&&(owner.read().paused||owner.read().playing)&&!psfSeekBusy()&&owner.read().selection?.entry===entry;
 }
 const addressText=value=>Number.isInteger(value)?`0x${value.toString(16).toUpperCase().padStart(5,'0')}`:'—';
 function cancelPendingCapture(){if(capturePending)capturePending.cancelled=true;}
@@ -131,7 +139,9 @@ function updateCodeDisplay() {
   if (disposed || !codeLive) return;
   const fromPsf=psfOwnsLiveView(), live=fromPsf?psfSong.read():codeLive.read();
   const running=fromPsf||Boolean(codeHost?.isRunning()), observing=running&&live.liveEnabled&&(!fromPsf||psfView==='channel');
-  const seeking=Boolean(fromPsf&&(live.seeking||live.seekPreparing)),inputBlocked=observing||seeking;
+  const seeking=Boolean(fromPsf&&(live.seeking||live.seekPreparing));
+  const psfEditable=Boolean(fromPsf&&observing&&live.playing&&live.manualAvailable&&live.liveState&&!seeking);
+  const inputBlocked=Boolean(seeking||observing&&(!live.liveState||fromPsf&&!psfEditable));
   const source=fromPsf?'PSF':'Code';
   $('spuCodeLiveTools').hidden=!running;
   $('spuCodeLiveTools').dataset.liveKind=fromPsf?'psf':'code';
@@ -143,8 +153,8 @@ function updateCodeDisplay() {
   $('spuLiveChannel').setAttribute('aria-label',fromPsf?'PSF channel or editable Synth':'Code channel to observe');
   $('spuLiveHelpLabel').setAttribute('aria-label',`About ${source} Live`);
   $('spuLiveHelpText').textContent=fromPsf?
-    "Read-only observations aligned with the song output, up to 20 updates/s. Choose CH 1–24 without changing its sound. The numbered buttons show sampled Core active / ENV, not output level; a silent modulator with zero voice volume can still light. Click a number to select its CH. Selected CH only is a Tetorica software listening helper: it plays that channel’s Dry output with its voice and main volumes. All 24 voices, PMON sources, shared Noise and the song’s reverb keep running. Off restores the original full mix and shared reverb return. Monitoring works independently of Live; it does not change the captured sound or pause audition. Switching briefly fades the output while retaining the same song position. The underline shows ENV, amber when Gate is Off but the core remains active. Live Off or an unavailable observation clears the indicators. Pause freezes all channels and their indicators. In PSF CH view with Live On, the keyboard temporarily auditions the selected ADPCM or Noise channel; ADPCM uses the Reference key tuning, while Noise keeps its shared Clock and keys trigger envelopes; the song, frozen display and edited sound are kept. CH / Reference changes end that audition. Resume restores the editor before continuing the same song position. Choose Synth · edit and play to audition your edited instrument while the song stays paused. Live and the source activity indicators keep running; no CH number is highlighted. Click any CH number or choose a PSF CH to return to its display and paused audition. Turning Live Off selects Synth and stops acquiring observations; turning it On returns to the remembered PSF CH. In paused Synth view, PCM, ADSR, reverb, Morph, Noise and PMON edits keep the source position and frozen CH state. Return to a PSF CH to compare, then back to Synth to keep editing. Editing while the song is playing still stops it. Capture copies one channel into the edited instrument, selects Synth · edit and play and keeps the song paused at the same position and channel. Live and the frozen CH activity remain enabled. The keyboard plays the captured instrument; Resume continues the original song. Select a PSF CH to observe or audition the source again. Use Save to presets to keep the copy in Files. Loading another instrument, Reset instrument, Code or explicit Stop still stops the song. Noise Capture keeps Clock, ADSR, voice levels and send, using a fixed silent support loop rather than extracting ADPCM. Running Noise phase is not copied. PMON carriers, including Noise with PMON, still need a paired capture and remain unavailable. The PCM graph is a bounded ADPCM preview from programmed Start with zero history, not the audible waveform or a full extraction. Reference key reproduces PITCH without inferring the original root. New notes restart the envelope. Start / Repeat are programmed addresses, not cursors. Gate is the last CPU KON / KOFF request; ENDX also marks loops. Intermediate changes can be missed.":
-    'Read-only observations of the same physical SPU, up to 20 updates/s. Choose a channel to inspect without changing its sound. Live Off restores the edited instrument display while Code continues. Editing that instrument stops Code first. Stop restores your samples and settings. Intermediate register writes can be missed.';
+    "Live follows the audible PSF position, up to 20 updates/s. While playing, the selected CH shares its voice Volume, PITCH, ADSR and keyboard with the original PSF SPU. Edits are temporary; later song writes can replace them. Old key releases and Pitch resets cannot overwrite a newer CPU-owned note. Reference key maps the source-written PITCH without inferring the sample root. Noise keys trigger its envelope; its shared Clock still controls the noise character. PMON keeps the preceding source voice running; the keyboard does not transpose a pair. Commands reach the next unrendered boundary, with about 0.2 seconds of bounded lookahead plus device latency. Sample RAM, Start/Repeat and shared Noise/reverb/PMON controls stay read-only in CH view. The PCM graph is a bounded sample-start preview, not the current output. Selected CH only is a software Dry listening helper; all voices and shared effects continue processing. Pause freezes the source and temporarily auditions the selected ADPCM or Noise on the editor bank. Resume restores the editor and continues retained song PCM. Capture to Synth copies the paused sound into the author instrument; it does not edit the PSF. Synth view plays and edits the separate authored instrument while the PSF continues, or keeps its paused position. Live Off selects Synth; On returns to the remembered PSF CH. Loading a different instrument/source, starting Code, or explicit Stop retains its existing transport behavior. Seek reconstructs the source program and discards temporary channel edits. Code and PSF playback stay mutually exclusive.":
+    'Live shows the selected physical CH, up to 20 updates/s. Change a control to edit only that parameter on this CH; its musical pitch and Gate are kept for scalar edits. Reverb and Noise clock are shared hardware settings. PMON uses the preceding physical CH as its source. The touched setting is also kept in your common keyboard instrument for Stop. Live Off edits the common instrument on all CHs. Code and Keyboard tabs keep Run, loops, context and software FX. In Keyboard with Live On, keys play this CH; Live Off uses round robin. The latest Note On owns a physical CH: an old key-up or Code noteOff cannot release the other performer. There is no automatic return to the earlier note. Raw keyOff/allNotesOff remain explicit hardware actions. Code can overwrite the same parameter later. Stop restores the latest edited sound. Intermediate register writes can be missed.';
   $('spuLiveEnabled').checked=live.liveEnabled;
   $('spuLiveEnabled').disabled=seeking;
   $('spuLiveChannel').disabled=seeking;
@@ -167,9 +177,10 @@ function updateCodeDisplay() {
   $('spuPsfReferenceKey').disabled=seeking||Boolean(capturePending)||noiseVoice||(fromPsf&&psfView==='synth');
   $('spuPsfReferenceKey').title=noiseVoice?'Noise uses the shared Clock; Reference key does not apply.':'This key reproduces the selected ADPCM PITCH code; it does not infer the original root note.';
   setText('spuPsfCapture',capturePending?'Preparing…':'Capture to Synth');
-  const captureHint=captureReason||(noiseVoice?'Copy Noise Clock, ADSR, voice volumes and send. Keys trigger the envelope; Clock changes the noise character. The running Noise phase is not copied. Your edited shared reverb is kept.':'Copy the paused ADPCM, loop, ADSR, voice volumes and send. The Reference key preserves this PITCH; a new key press restarts the envelope. Your edited shared reverb is kept.');
+  const captureHint=captureReason||(noiseVoice?'Copy Noise Clock, ADSR, voice volumes and send. Keys trigger the envelope; Clock changes the noise character. The running Noise phase is not copied. Your edited shared reverb is kept.':'Copy the paused ADPCM, loop, ADSR, voice volumes and send. A new key press restarts the envelope; looping samples use their internal Loop Start marker when present. The Reference key preserves this PITCH. Your edited shared reverb is kept.');
   $('spuPsfCapture').title=captureHint;setText('spuPsfCaptureHint',captureHint);
-  const root=$('spuVoicePanel');root.dataset.observing=String(observing);root.dataset.observationChannel=String(live.liveVoice);root.dataset.observationKind=observing?source.toLowerCase():'';root.dataset.observationWaiting=String(fromPsf&&observing&&(seeking||!live.liveState||live.liveWaiting||live.liveError));root.inert=inputBlocked;
+  const root=$('spuVoicePanel'),viewChanged=root.dataset.observing!==String(observing)||root.dataset.observationKind!==(observing?source.toLowerCase():'');
+  root.dataset.observing=String(observing);root.dataset.observationChannel=String(live.liveVoice);root.dataset.observationKind=observing?source.toLowerCase():'';root.dataset.observationWaiting=String(fromPsf&&observing&&(seeking||!live.liveState||live.liveWaiting||live.liveError));root.inert=inputBlocked;
   delete root.dataset.observationFrame;
   const readOnlyChanged=liveReadOnly!==inputBlocked;
   if (readOnlyChanged) {liveReadOnly=inputBlocked;panel.setConnected(Boolean(audio)&&!inputBlocked);}
@@ -179,10 +190,13 @@ function updateCodeDisplay() {
     if (voice) {
       // The standalone editor has one instrument slot. Map only its display
       // to the selected physical voice; no preset or sample is applied.
-      const matchesMorph=!fromPsf&&snapshot.morph?.enabled&&voice.waveform?.pcm&&morphPcm(snapshot.morph).every((value,i)=>value===voice.waveform.pcm[i]);
+      const selectedMorph=voice.morphSettings??snapshot.morph;
+      const matchesMorph=!fromPsf&&selectedMorph?.enabled&&voice.waveform?.pcm&&morphPcm(selectedMorph).every((value,i)=>value===voice.waveform.pcm[i]);
       displayed={...snapshot,channels:snapshot.channels.map((value,i)=>i===0?{...voice,channel:0}:value),
-        observation:fromPsf?{...snapshot.observation,voice:live.liveVoice}:snapshot.observation,
-        morph:snapshot.morph?{...snapshot.morph,enabled:Boolean(matchesMorph)}:undefined};
+        codeEditChannel:fromPsf?null:live.liveVoice,
+        observation:fromPsf?{...snapshot.observation,voice:live.liveVoice,editable:psfEditable}:snapshot.observation,
+        morph:selectedMorph?{...selectedMorph,enabled:Boolean(matchesMorph)}:undefined,
+        ...(!fromPsf?{pmon:voice.pmonSettings??snapshot.pmon,noise:{...snapshot.noise,enabled:voice.noise??snapshot.noise?.enabled,clock:voice.noiseClock??snapshot.noise?.clock}}:{})};
       if(fromPsf) {
         if(Number.isInteger(snapshot.observation?.nativeFrames))root.dataset.observationFrame=String(snapshot.observation.nativeFrames);
         $('sampleName').textContent=`PSF CH ${live.liveVoice+1} · Programmed Start ${addressText(voice.startAddress)} · bounded ADPCM preview`;
@@ -199,14 +213,14 @@ function updateCodeDisplay() {
   }
   // Off transport ticks must not redraw the authored editor or interrupt a
   // drawing gesture. Actual editor changes already arrive through applyState.
-  if (displayed&&((observing&&live.liveState&&!seeking)||readOnlyChanged)) panel.update(displayed);
-  for (const id of ['pitchBend','keyboardPitchBend']) $(id).disabled=running;
+  if (displayed&&((observing&&live.liveState&&!seeking)||readOnlyChanged||viewChanged)) panel.update(displayed);
+  for (const id of ['pitchBend','keyboardPitchBend']) $(id).disabled=fromPsf?!(live.playing&&(psfView==='synth'||psfEditable)):running&&Boolean(codeHost?.isCodeMode());
   if (running) for (const input of document.querySelectorAll('[data-morph-performance-amount]'))
-    input.disabled=seeking||!(fromPsf&&live.paused&&psfView==='synth')||!state?.morph?.enabled||Boolean(state?.noise?.enabled);
-  $('instrumentName').disabled=inputBlocked;
+    input.disabled=seeking||(fromPsf?!((live.paused||live.playing)&&psfView==='synth'):false)||!displayed?.morph?.enabled||Boolean(displayed?.noise?.enabled);
+  $('instrumentName').disabled=inputBlocked||fromPsf&&observing;
   for(const id of ['savePreset','saveSoundToFiles','spuFileSaveSoundButton']) {
     const button=$(id);if(!button)continue;
-    if(fromPsf&&inputBlocked) {
+    if(fromPsf&&observing) {
       if(!observedSaveButtons.has(button))observedSaveButtons.set(button,{disabled:button.disabled,title:button.getAttribute('title')});
       button.disabled=true;button.title='Live view only. Capture a paused ADPCM channel into Synth, or turn Live off to save your edited instrument.';
     } else if(observedSaveButtons.has(button)) {
@@ -216,7 +230,7 @@ function updateCodeDisplay() {
     }
   }
   $('spuLiveStatus').textContent=seeking?(live.seekMessage||'Seeking silently · previous position and edited instrument kept.'):
-    !running?'Performance stopped · edited instrument restored.':fromPsf&&psfView==='synth'?`Synth · edit and play one instrument across the keyboard. PSF ${live.paused?'stays paused through edits; Resume continues the song':'continues playing; editing stops it'}. Choose a PSF CH to view or audition it.`:!live.liveEnabled?`Live off · ${source} continues${live.paused?' paused':''}. Editing the instrument stops ${source} first.`:live.liveError?live.liveMessage:live.liveWaiting?`Waiting for the current ${source} observation…`:`${live.paused?'Paused · frozen':'Live'} · ${source} CH ${live.liveVoice+1} · read-only PCM / ADSR / FX`;
+    !running?'Performance stopped · edited instrument restored.':fromPsf&&psfView==='synth'?`Synth · edit and play your own instrument. PSF ${live.paused?'stays paused; Resume continues the song':'continues playing'}. Choose a PSF CH to share its controls and keyboard.`:!live.liveEnabled?`Live off · ${source} continues${live.paused?' paused':''}. ${fromPsf?'Choose Synth to edit.':'Edit the common keyboard sound without stopping Code.'}`:live.liveError?live.liveMessage:live.liveWaiting?`Waiting for the current ${source} observation…`:`${live.paused?'Paused · frozen':'Live'} · ${source} CH ${live.liveVoice+1} · ${fromPsf?psfEditable?'edit volume / PITCH / ADSR · keyboard: this CH':live.playing?(live.manualReason||'Channel controls preparing'):'read-only PCM / ADSR / FX':'edit this CH · shared Reverb / Noise clock'}`;
   if(fromPsf) {
     const monitor=live.monitorError?live.monitorMessage:live.monitorSwitching?'Switching listening output…':live.monitorEnabled?`Listening to CH ${live.liveVoice+1} · Dry`:'';
     if(monitor)$('spuLiveStatus').textContent+=` · ${monitor}`;
@@ -229,11 +243,11 @@ function codeActivity() {
   visualizer.setRunning(performanceRunning());
   visualizer.wake();
 }
-async function stopCodeForEdit({preservePausedPsf=false,isCurrent=()=>true}={}) {
+async function stopCodeForEdit({preservePsf=false,isCurrent=()=>true}={}) {
   const operation=assetEpoch,current=()=>!disposed&&operation===assetEpoch&&isCurrent();
   await stopPausedKeyboard();
   if(!current())return false;
-  if(!preservePausedPsf&&psfSong?.read().canStop)await psfSong.stop();
+  if(!preservePsf&&psfSong?.read().canStop)await psfSong.stop();
   if(!current())return false;
   if(codeHost?.isRunning())await codeHost.stop();
   return current();
@@ -298,11 +312,24 @@ $('spuClickGuard').addEventListener('change',()=>{void applyClickGuard().catch(r
 async function invoke(method, args = []) {
   cancelPendingCapture();
   if(psfSeekBusy())throw new DOMException('Wait for PSF seeking to finish','AbortError');
-  const pausedEdit=pausedEditorMethods.has(method)?pausedEditorOwner():null;
-  const operation=assetEpoch,current=()=>!disposed&&operation===assetEpoch&&(!pausedEdit||pausedEdit());
+  const preparing=psfSong?.read();
+  if(preparing?.starting||preparing?.resuming)throw new DOMException('PSF playback is preparing','AbortError');
+  const psfChannel=playingPsfChannel();
+  if(psfChannel) {
+    if(!psfChannel.manualAvailable)throw new Error(psfChannel.manualReason||'PSF channel controls are preparing.');
+    let result;
+    if(method==='setInstrumentPreset')result=psfSong.editVoice(psfChannel.liveVoice,args[0]);
+    else if(method==='setInstrumentEnvelope')result=psfSong.editVoice(psfChannel.liveVoice,{envelope:args[0]});
+    else if(method==='setInstrumentPitchBend')result=psfSong.setPitchBend(args[0]);
+    else throw new Error('Use Synth view to edit samples or shared effects. PSF channel controls support voice volume, PITCH and ADSR.');
+    visualizer.wake();return result;
+  }
+  const retainedEdit=pausedEditorMethods.has(method)?retainedPsfEditorOwner():null;
+  const codeRunning=Boolean(codeHost?.isRunning()),codeSession=audio?.codeSession,codeView=codeLive?.read(),codeTarget=codeView?.liveEnabled?codeView.liveVoice:null;
+  const operation=assetEpoch,current=()=>!disposed&&operation===assetEpoch&&(!retainedEdit||retainedEdit());
   if(previewActive()||pausedStopping)await stopPausedKeyboard();
   if(!current())throw new DOMException('Instrument edit was superseded','AbortError');
-  if(psfSong?.read().canStop||codeHost?.isRunning())if(!await stopCodeForEdit({preservePausedPsf:Boolean(pausedEdit),isCurrent:current}))throw new DOMException('Instrument edit was superseded','AbortError');
+  if(psfSong?.read().canStop)if(!await stopCodeForEdit({preservePsf:Boolean(retainedEdit),isCurrent:current}))throw new DOMException('Instrument edit was superseded','AbortError');
   // Note owners have already awaited resume and checked their press token.
   // Do not yield again here: an Off/Stop must never overtake its pending On.
   const engine = audio ?? await ensureAudio();
@@ -312,20 +339,24 @@ async function invoke(method, args = []) {
   const commandEpoch = epoch;
   // Only reconcile leases that existed when this edit was sent. A key pressed
   // after this snapshot boundary must keep its own later Note Off identity.
-  const editedNotes=new Set([...notes.values()].filter(note=>note.owner!=='psf-preview'&&note.started&&note.submitted).map(note=>note.id));
+  const editedNotes=new Set([...notes.values()].filter(note=>!['psf-preview','psf-live'].includes(note.owner)&&note.started&&note.submitted).map(note=>note.id));
   let result;
   try {
     if(method==='instrumentNoteOn')for(const note of notes.values())if(note.id===args[1])note.submitted=true;
-    result = await engine.command(method, args);
+    if(codeRunning&&method.startsWith('set')&&method!=='setInstrumentPitchBend'&&method!=='setInstrumentSample') {
+      if(!Number.isSafeInteger(codeSession)||engine.codeSession!==codeSession)throw new DOMException('SPU Code stopped','AbortError');
+      result=await engine.command('editInstrument',[codeSession,codeTarget,method,args]);
+    }else result = await engine.command(method,method==='setInstrumentSample'&&codeRunning?[...args,codeSession]:args);
     // The worklet validates before stopping voices. Preserve note owners when
     // it rejects the change, so their later key-up can still release them.
-    if (changesTopology && audio===engine && commandEpoch===epoch) {epoch++;notes.clear();updateKeys();}
+    if (changesTopology && !codeRunning&&audio===engine && commandEpoch===epoch) {epoch++;notes.clear();updateKeys();}
     else if(audio===engine&&commandEpoch===epoch&&Array.isArray(engine.state?.auditions)) {
       const sounding=new Set(engine.state.auditions.map(note=>note.id));
       for(const [source,note]of notes)if(editedNotes.has(note.id)&&!sounding.has(note.id))notes.delete(source);
       updateKeys();
     }
-  } finally {if(changesTopology)topologyPending--;}
+  } catch(error){if(error?.committed&&current())codeHost?.markSoundDirty();throw error;}
+  finally {if(changesTopology)topologyPending--;}
 
   // A live edit may expose a release/reverb tail after the display slept.
   // Monitoring remains passive, and an intervening Stop cancels this wake.
@@ -360,7 +391,7 @@ $('synthMenuPanel').addEventListener('click',event=>{
   void codeHost?.controls.setExpanded(false);
   if(action.dataset.spuOpenPanel)selectEditorTab(action.dataset.spuOpenPanel);
 }, {capture:true});
-codeLive=createSpuCodeLive({getAudio:()=>audio,isRunning:()=>Boolean(codeHost?.isCodeMode()&&codeHost?.isRunning()&&!document.hidden),onUpdate:updateCodeDisplay});
+codeLive=createSpuCodeLive({getAudio:()=>audio,isRunning:()=>Boolean(codeHost?.isRunning()&&!document.hidden),onUpdate:updateCodeDisplay});
 for(let ch=0;ch<24;ch++)$('spuLiveChannel').append(new Option(`CH ${ch+1}`,String(ch)));
 function selectLiveVoice(voice) {
   if(!Number.isInteger(voice)||voice<0||voice>23)return;
@@ -478,20 +509,25 @@ function updateKeys() {
     const active = keys.has(button.dataset.key);
     button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', String(active));
   }
+  updateHeldStatus();
 }
 async function press(source, entry) {
-  if (codeHost?.isCodeMode() || topologyPending || switchingAudioOutput || capturePending || psfSeekBusy()) return;
+  if (codeHost?.getState?.()?.busy || topologyPending || switchingAudioOutput || capturePending || psfSeekBusy()) return;
   if (notes.get(source)?.released) release(source, true);
   if (notes.has(source)) return;
   const song=psfSong?.read(),selectedPsf=psfView==='channel'&&song?.liveEnabled,selection=song?.paused&&selectedPsf?pausedSelection():null;
-  const owner=song?.paused?(selectedPsf?'psf-preview':'paused-editor'):'editor';
-  const note = {key:entry.key, midi:entry.midi, channel:null, id:`spu-synth:${++noteSequence}`, epoch, started:false,submitted:false,owner};
+  if(song?.starting||song?.resuming)return;
+  const owner=song?.paused?(selectedPsf?'psf-preview':'psf-editor'):song?.playing?(selectedPsf?'psf-live':'psf-editor'):'editor';
+  const transport=psfSong,psfAction=psfActionEpoch,selectedChannel=song?.liveVoice;
+  const note = {key:entry.key, midi:entry.midi, channel:owner==='psf-live'?selectedChannel:null, id:`spu-synth:${++noteSequence}`, epoch, started:false,submitted:false,owner};
   notes.set(source, note); updateKeys();
   try {
     await ensureAudio();
     await pausedStopFence;
-    const current=()=>note.epoch===epoch&&notes.get(source)===note&&!disposed&&!topologyPending&&!switchingAudioOutput;
+    const current=()=>note.epoch===epoch&&notes.get(source)===note&&!disposed&&!topologyPending&&!switchingAudioOutput&&
+      (!owner.startsWith('psf-')||psfSong===transport&&psfActionEpoch===psfAction&&transport.read().selection?.entry===song.selection?.entry);
     if(!current())return;
+    if(codeHost?.getState?.()?.busy||!codeHost?.isRunning()&&codeHost?.openOutput?.()===false){notes.delete(source);updateKeys();return;}
     let allocation;
     if(owner==='psf-preview') {
       if(!selection)throw new Error(psfSong.read().captureMessage||'Wait for a matching paused ADPCM observation before auditioning.');
@@ -499,12 +535,21 @@ async function press(source, entry) {
       note.started=true;
       allocation=await pausedAudition.noteOn(note.id,note.midi,{isCurrent:()=>current()&&pausedSelection()?.key===selection.key});
       if(!allocation){if(notes.get(source)===note)notes.delete(source);updateKeys();return;}
-    } else if(owner==='paused-editor') {
+    } else if(owner==='psf-live') {
+      const live=playingPsfChannel();
+      if(!live||live.liveVoice!==selectedChannel||!current())return;
+      const available=transport.describeVoice(selectedChannel);
+      if(!live.manualAvailable||!available?.playable)throw new Error(available?.reason||live.manualReason||'This PSF voice is not ready for keyboard input.');
+      const referenceMidi=(Number($('spuPsfReferenceKey').value.slice(1))+1)*12;
+      note.started=true;note.submitted=true;
+      allocation=transport.noteOn(note.id,selectedChannel,note.midi,{referenceMidi,bend});
+      if(!allocation){if(notes.get(source)===note)notes.delete(source);updateKeys();return;}
+    } else if(owner==='psf-editor') {
       // Synth view auditions the authored instrument without retiring the
       // paused song. Its bank must first be restored from any preview lease.
       await stopPausedKeyboard();
       const live=psfSong?.read();
-      if(!current()||!live?.paused||(psfView==='channel'&&live.liveEnabled)||live.selection?.entry!==song.selection?.entry)return;
+      if(!current()||!(live?.paused||live?.playing)||(psfView==='channel'&&live.liveEnabled)||live.selection?.entry!==song.selection?.entry)return;
       note.started=true;note.submitted=true;pausedEditorAudition=true;allocation=await audio.command('instrumentNoteOn',[note.midi,note.id,bend]);
     } else {
       await stopPausedKeyboard();
@@ -513,12 +558,14 @@ async function press(source, entry) {
       if(psfSong?.read().canStop)await psfSong.stop();
       if(!current())return;
       note.started = true;
-      allocation = await invoke('instrumentNoteOn', [note.midi, note.id, bend]);
+      const live=codeLive?.read(),channel=codeHost?.isRunning()&&live?.liveEnabled?live.liveVoice:null;
+      allocation = await invoke('instrumentNoteOn', [note.midi, note.id, bend,channel]);
     }
     note.channel = allocation.channel;
     if (allocation.stolenId) for (const [oldSource, old] of notes) if (old.id === allocation.stolenId) notes.delete(oldSource);
     updateKeys();
-    if (notes.get(source) === note) status(owner==='psf-preview'?`Paused PSF CH ${psfSong.read().liveVoice+1} · ${noteName(note.midi)} · temporary audition. Source display stays frozen.`:`${noteName(note.midi)} · ${state?.auditions?.length ?? notes.size} notes held`);
+    if (notes.get(source) === note) status(owner==='psf-preview'?`Paused PSF CH ${psfSong.read().liveVoice+1} · ${noteName(note.midi)} · temporary audition. Source display stays frozen.`:
+      owner==='psf-live'?`PSF CH ${selectedChannel+1} · ${noteName(note.midi)} · manual key; later song writes take over.`:`${noteName(note.midi)} · ${state?.auditions?.length ?? notes.size} notes held`);
   } catch (error) { if (notes.get(source) === note) notes.delete(source); updateKeys();if(error?.name!=='AbortError')throw error; }
 }
 function release(source, force = false) {
@@ -526,18 +573,21 @@ function release(source, force = false) {
   if (!force && $('sustainToggle').checked) {note.released = true; return;}
   notes.delete(source); updateKeys();
   if(note.owner==='psf-preview')void pausedAudition?.noteOff(note.id).catch(report);
+  else if(note.owner==='psf-live'){try{psfSong?.noteOff(note.id);}catch(error){report(error);}}
   else if (note.started && audio) void audio.command('instrumentNoteOff', [note.id]).catch(report);
 }
 function releaseKeyboard(force = false) {
   if (force) {
+    releasePsfKeys();
     epoch++; notes.clear(); updateKeys();
     if(previewActive()||pausedStopping)void pausedAudition?.allNotesOff().catch(report);
     else if (audio) void audio.command('instrumentAllNotesOff').catch(report);
   } else for (const source of [...notes.keys()]) release(source);
 }
 function editing(target) {
-  const node = target?.closest?.('input,textarea,[contenteditable="true"],dialog[open]');
-  return node && !node.matches('input[type=range],input[type=checkbox]');
+  if(target?.closest?.('dialog[open],.monaco-editor,#synthCodeEditorHost,[contenteditable]:not([contenteditable="false"])'))return true;
+  const node = target?.closest?.('input,select,textarea');
+  return node && !node.matches?.('input[type=range],input[type=checkbox]');
 }
 // Native select popups can consume keys before document handlers see them.
 // Return pointer users to performance focus once a choice is committed; keep
@@ -557,16 +607,17 @@ document.addEventListener('change', event => {
   }
 }, {capture:true});
 document.addEventListener('keydown', event => {
-  if($('spuFileNameDialog')?.open)return;
+  if(event.defaultPrevented||$('spuFileNameDialog')?.open||$('spuFileContextMenu')?.hidden===false)return;
   if(event.key==='Escape'&&psfSong?.read().seeking){event.preventDefault();event.stopPropagation();void cancelPsfSeek().catch(report);return;}
   if(event.key==='Escape'&&event.target?.id==='psfSongSeek')return;
   if (event.target?.closest?.('select') && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End',' ','Enter','Escape','Tab'].includes(event.key)) pointerSelect = null;
   if (event.isComposing) return;
   const entryField=event.target?.closest?.('input[type=number],input[type=text]');
-  if (event.key === 'Enter' && entryField) {event.preventDefault();entryField.blur();return;}
+  const editorField=event.target?.closest?.('dialog[open],.monaco-editor,#synthCodeEditorHost,[contenteditable]:not([contenteditable="false"])');
+  if (event.key === 'Enter' && entryField&&!editorField) {event.preventDefault();entryField.blur();return;}
+  if (editing(event.target)) return;
   if (event.key === 'Escape') {void stop().catch(report); return;}
-  if (codeHost?.isCodeMode()) return;
-  if (event.ctrlKey || event.metaKey || event.altKey || editing(event.target)) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
   const entry = layout.entries.find(value => value.key === event.key.toLowerCase()); if (!entry) return;
   // Capture musical keys before a focused select can use type-ahead. Keep
   // arrows, Space and Tab available for normal control navigation. Repeats
@@ -575,10 +626,10 @@ document.addEventListener('keydown', event => {
   if (!event.repeat) void press(`key:${event.code}`, {...entry, midi:entry.midi + octave * 12}).catch(report);
 }, {capture:true});
 document.addEventListener('keyup', event => release(`key:${event.code}`));
-window.addEventListener('blur', () => {if(!codeHost?.isRunning()){releaseKeyboard(true); resetBend();}});
+window.addEventListener('blur', () => {releaseKeyboard(true);resetBend();});
 document.addEventListener('visibilitychange', () => {
   codeLive.sync();
-  if (document.hidden) {if(!codeHost?.isRunning()){releaseKeyboard(true);resetBend();}panel.setVisible(false);}
+  if (document.hidden) {releaseKeyboard(true);resetBend();panel.setVisible(false);}
   else panel.setVisible(true);
   visualizer.setVisible(!document.hidden);
 });
@@ -668,12 +719,13 @@ $('loadAudio').addEventListener('click', () => $('audioFileInput').click());
 $('audioFileInput').addEventListener('change', async () => {
   const file = $('audioFileInput').files[0]; $('audioFileInput').value = ''; if (!file) return;
   const operation = beginAssetOperation();
+  const codeSession=codeHost?.isRunning()?audio?.codeSession:null;
   preparation?.cancel();
   const rootNote = Number($('sampleRootNote').value), loop = $('sampleLoop').checked;
   try {
     if (!Number.isInteger(rootNote) || rootNote < 0 || rootNote > 127) throw new RangeError('Root MIDI note must be 0–127');
     if (file.size > MAX_AUDIO_FILE_BYTES) throw new RangeError('Choose an audio file smaller than 32 MiB');
-    await stopCodeForEdit();
+    if(codeSession===null)await stopCodeForEdit();
     sampleStatus('Opening audio…');
     const engine = await ensureAudio(); sampleStatus('Decoding audio…');
     const buffer = await decodeAudio(await file.arrayBuffer());
@@ -684,6 +736,15 @@ $('audioFileInput').addEventListener('change', async () => {
     sampleStatus(useHost ? 'Preparing Software audio…' : 'Encoding SPU ADPCM…');
     const encoded = useHost ? null : await encodeInWorker(prepared.pcm, {loopStartSamples:prepared.loopStartSamples, maxBytes});
     if (operation !== assetEpoch) return;
+    if(codeSession!==null) {
+      if(engine.codeSession!==codeSession||!codeHost?.isRunning())return;
+      const source=await engine.command('getInstrument',[0]);if(operation!==assetEpoch||engine.codeSession!==codeSession)return;
+      const {sample:ignored,...preset}=source.preset,baseFrequencyHz=440*2**((rootNote-69)/12);
+      const instrument=writeSpuInstrument(file.name.slice(0,80),{...source,preset,waveform:null,morph:{...source.morph,enabled:false},
+        sample:useHost?{pcm:prepared.pcm,baseFrequencyHz,loop}:{adpcm:encoded.adpcm,baseFrequencyHz,...(loop?{loopStartSamples:0}:{})}});
+      if(await applyInstrumentDocument(instrument,{isCurrent:()=>operation===assetEpoch&&engine.codeSession===codeSession}))sampleStatus(`Loaded ${file.name}. Code continues.`);
+      return;
+    }
     await stop();
     if (operation !== assetEpoch) return;
     if (useHost) await engine.command('loadHostPCM',[prepared.pcm,{baseFrequencyHz:440*2**((rootNote-69)/12),loop}]);
@@ -705,7 +766,7 @@ function download(name, contents) {
   const link = document.createElement('a'); link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
-let vabBank = null, vabName = '', vabSamples = new Map(), bankChoices = [], psfSet = null, bankReadController = null, psfHasSongs = false, extractingPsf = false, bankSaveRequest = null;
+let vabBank = null, vabName = '', bankChoices = [], psfSet = null, bankReadController = null, psfHasSongs = false, extractingPsf = false, bankSaveRequest = null;
 const vabStatus = (message, error=false) => { $('vabStatus').textContent=message; $('vabStatus').dataset.error=String(error); };
 function updatePsfPlayback(next) {
   if(disposed)return;
@@ -800,7 +861,7 @@ function beginAssetOperation() {
 }
 function chooseBank(index) {
   const choice=bankChoices[index]; if (!choice) return;
-  vabBank=choice.bank; vabName=choice.name; vabSamples=choice.samples;
+  vabBank=choice.bank; vabName=choice.name;
   const availability=new Map(),reasons=new Map(); let first=null,playable=0;
   $('vabTone').replaceChildren(...vabBank.tones.map((tone,index)=>{
     if (!availability.has(tone.sample)) {
@@ -938,42 +999,17 @@ $('vabFileInput').addEventListener('change', async () => {
 });
 $('loadVabTone').addEventListener('click', async () => {
   if (!vabBank || bankReadController || $('vabTone').value==='') return;
-  const operation=beginAssetOperation(), bank=vabBank, cache=vabSamples, name=vabName, index=Number($('vabTone').value);
+  const operation=beginAssetOperation(),bank=vabBank,name=vabName,index=Number($('vabTone').value);
   preparation?.cancel();
   try {
-    await stopCodeForEdit();
-    // Validate bytes/tuning before stopping or changing the current sound.
-    const prepared=prepareVabTone(bank,index), engine=await ensureAudio();
-    if (operation!==assetEpoch) return;
-    const current=await engine.inspect();
-    if (operation!==assetEpoch) return;
-    const key=`${prepared.tone.sample}:${prepared.options.baseFrequencyHz}`;
-    const cached=cache.get(key);
-    let sample=cached?.engine===engine ? cached.sample : null;
-    if (!sample && prepared.adpcm.length > 524288-current.nextAddress) throw new RangeError('Tone exceeds free SPU sample RAM. Reload the page for a fresh bank.');
-    await stop();
-    if (operation!==assetEpoch) return;
-    if (!sample) {
-      sample=await engine.command('loadADPCM',[prepared.adpcm,prepared.options]);
-      cache.set(key,{engine,sample});
-      if (operation!==assetEpoch) return;
-    }
-    // Check the asset generation between messages, so a newer load/reset wins.
-    for (const [method,args] of [
-      ['setInstrumentPmon',[{enabled:false}]],
-      ['setInstrumentNoise',[{enabled:false}]],
-      ['setInstrumentMorph',[{enabled:false}]],
-      ['setInstrumentPreset',[{...prepared.preset,sample}]],
-    ]) {
-      await engine.command(method,args);
-      if (operation!==assetEpoch) return;
-    }
-    instrumentName=vabTonePresetName(name,prepared.tone);
-    codeHost?.markSoundDirty();
-    $('instrumentName').value=instrumentName;
-    const message=`Loaded ${instrumentName} · ${sample.byteLength} ADPCM bytes${prepared.trimmedBytes ? ` · ignored ${prepared.trimmedBytes} bytes after END` : ''}. Play the keyboard or use Save to presets.`;
-    vabStatus(message); status(message); applyState(await engine.inspect());
-  } catch (error) {if (operation===assetEpoch) {vabStatus(error.message,true); report(error);}}
+    // Parse/tune the Tone before changing either the author or the Code bank.
+    const prepared=prepareVabTone(bank,index);
+    const reverb=state?{preset:state.reverb.preset,volumeLeft:state.reverb.volumeLeft,volumeRight:state.reverb.volumeRight}:{preset:'off',volumeLeft:.25,volumeRight:.25};
+    const instrument=prepareVabTonePreset(bank,index,{name,reverb});
+    if(!await applyInstrumentDocument(instrument,{isCurrent:()=>operation===assetEpoch}))return;
+    const message=`Loaded ${instrument.name} · ${prepared.adpcm.length} ADPCM bytes${prepared.trimmedBytes ? ` · ignored ${prepared.trimmedBytes} bytes after END` : ''}. Play the keyboard or use Save to presets.`;
+    vabStatus(message);status(message);
+  } catch(error){if(operation===assetEpoch){vabStatus(error.message,true);report(error);}}
 });
 $('savePreset').addEventListener('click', async () => {
   try {
@@ -1053,16 +1089,34 @@ async function capturePsfVoice() {
   }
 }
 async function applyInstrumentDocument(value,{isCurrent=()=>true,beforeStop=()=>true,deferStopForPreflight=false,preservePausedPsf=false}={}) {
-  const instrument=readSpuInstrument(value),operation=assetEpoch;
-  const current=()=>!disposed&&operation===assetEpoch&&isCurrent();
+  const instrument=readSpuInstrument(value),operation=assetEpoch,codeAtStart=Boolean(codeHost?.isRunning());
+  const current=()=>!disposed&&operation===assetEpoch&&isCurrent()&&(codeAtStart||!codeHost?.isRunning());
   if(!current())return false;
   if(preservePausedPsf&&(!deferStopForPreflight||!psfSong?.read().paused))return false;
+  if(codeHost?.isRunning()) {
+    const session=audio?.codeSession;
+    if(!beforeStop())return false;
+    const engine=await ensureAudio();if(!current())return false;
+    if(!Number.isSafeInteger(session)||engine.codeSession!==session||!codeHost.isRunning())return false;
+    // One transaction validates the authored checkpoint AND the resident Code
+    // bank. Keep runtime/context/FX and client ownership; only held sample
+    // voices may stop. Explicit Stop later restores this latest editor sound.
+    await engine.command('applyInstrument',[value,session]);if(!current())return false;
+    const snapshot=await engine.inspect();if(!current()||audio!==engine)return false;
+    // Stop can win after the DSP committed but before its acknowledgement.
+    // Reconcile the committed author name/state without restarting that owner
+    // or claiming the cancelled Files selection as applied.
+    instrumentName=instrument.name;$('instrumentName').value=instrumentName;
+    applyState(snapshot);codeHost.markSoundDirty();
+    if(engine.codeSession!==session||!codeHost.isRunning())return false;
+    status(`Loaded ${instrument.name}. Code continues.`);return true;
+  }
   // Code may own a temporary RAM bank. Ordinary imports must restore the
   // authored bank before looking up sample IDs or inspecting its capacity.
   // Only paused PSF Capture, whose editor bank is already resident, defers it.
   if(!deferStopForPreflight) {
     if(!beforeStop())return false;
-    await stopCodeForEdit();if(!current())return false;
+    await stopCodeForEdit({isCurrent:current});if(!current())return false;
   }
   if(deferStopForPreflight){await stopPausedKeyboard();if(!current())return false;}
   const engine=await ensureAudio();if(!current())return false;
@@ -1077,7 +1131,7 @@ async function applyInstrumentDocument(value,{isCurrent=()=>true,beforeStop=()=>
   if(requiredBytes>524288-bank.nextAddress)throw new RangeError('Instrument exceeds free SPU sample RAM. Reload for a fresh bank.');
   if(deferStopForPreflight) {
     if(!current()||!beforeStop())return false;
-    if(!preservePausedPsf)await stopCodeForEdit();
+    if(!preservePausedPsf)await stopCodeForEdit({isCurrent:current});
     if(!current())return false;
   }
   await stop({preservePausedPsf});if(!current())return false;
@@ -1096,6 +1150,12 @@ async function applyInstrumentDocument(value,{isCurrent=()=>true,beforeStop=()=>
 $('resetPreset').addEventListener('click', async () => {
   const operation = beginAssetOperation(); preparation?.cancel();
   try {
+    if(codeHost?.isRunning()) {
+      const instrument=writeSpuInstrument('Sine',{preset:{volumeLeft:.75,volumeRight:.75,adsr1:15,adsr2:0,pitch:4096,reverb:false},
+        sample:createPs1InitSample(),reverb:state?.reverb??{preset:'off',volumeLeft:.25,volumeRight:.25},waveform:morphPcm({enabled:true}),
+        morph:{enabled:true},noise:{enabled:false},pmon:{enabled:false}});
+      await applyInstrumentDocument(instrument,{isCurrent:()=>operation===assetEpoch});return;
+    }
     await stopCodeForEdit();
     const engine = await ensureAudio();
     if (operation !== assetEpoch) return;

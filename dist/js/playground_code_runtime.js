@@ -10,6 +10,7 @@ import {executeWithPlaygroundGuards} from './playground_execution.js';
 import {midiToOpnPitch,opnPitchFromHz} from './soundchip_pitch.js';
 import {FM_PRESETS} from './megasynth-fm-presets.js';
 import {formatLogArgs} from './playground_log.js';
+import {readVab,prepareVabTone,exportVab,MAX_VAB_FILE_BYTES} from './ps1_vab.js';
 
 /** @typedef {'ym2612'|'segapsg'|'rf5c164'|'pwm'} DefaultCodeSoundChip */
 /** @type {readonly DefaultCodeSoundChip[]} */
@@ -38,6 +39,7 @@ const stopped=()=>new DOMException('Run stopped','AbortError');
  * @property {()=>number} now Audio clock in seconds.
  * @property {(name:ChipName)=>object|Promise<object>} useSoundChip Borrow a supported chip client.
  * @property {readonly ChipName[]} [supportedSoundChips] Host-owned chip IDs; defaults to the four Genesis instruments.
+ * @property {(target:object,method:string,args:unknown[])=>{target:object,channel:number}|null} [resolveNoteTarget] Map nested/aliased Gate methods to one physical channel owner.
  * @property {()=>object|null} [getFm] Current FM compatibility client.
  * @property {object} [fx] Effect factories and live-effect controls owned by the host.
  * @property {(path:string,options:object,entry:{path:string})=>unknown} [readFile] Read a virtual file; may return a promise.
@@ -60,11 +62,12 @@ const stopped=()=>new DOMException('Run stopped','AbortError');
  * @param {PlaygroundCodeRuntimeOptions<ChipName>} options
  */
 export function createPlaygroundCodeRuntime({ensureReady,now,useSoundChip,supportedSoundChips=CODE_SOUND_CHIPS,getFm=()=>null,fx={},
+  resolveNoteTarget=(target,_method,args)=>Number.isInteger(args[0])?{target,channel:args[0]}:null,
   readFile=()=>{throw Error('Virtual files are unavailable');},prepareSource=source=>source,
   onLog=()=>{},onState=()=>{},beforeStopSoundChips=()=>{},stopSoundChips=()=>{},guardExecution=true,realm=globalThis,
   setTimer=(fn,ms)=>setTimeout(fn,ms),clearTimer=id=>clearTimeout(id),createTaskChannel,
 }={}) {
-  for(const fn of [ensureReady,now,useSoundChip,getFm,readFile,prepareSource,onLog,onState,beforeStopSoundChips,stopSoundChips,setTimer,clearTimer]) {
+  for(const fn of [ensureReady,now,useSoundChip,getFm,resolveNoteTarget,readFile,prepareSource,onLog,onState,beforeStopSoundChips,stopSoundChips,setTimer,clearTimer]) {
     if(typeof fn!=='function')throw TypeError('Code runtime needs host callbacks');
   }
   const configuredChips=Array.isArray(supportedSoundChips)?Array.from(supportedSoundChips):[];
@@ -191,10 +194,18 @@ export function createPlaygroundCodeRuntime({ensureReady,now,useSoundChip,suppor
         if(typeof member!=='function')return guarded(member,owner);
         const method=(...args)=>{
           const caller=scopeFor(scope);check(caller);
+          // A host may expose one physical voice through both a root API and
+          // a monophonic child (for example wave.keyOn()). Canonical ownership
+          // keeps Stop Loop from releasing a newer Gate through another alias.
+          const noteTarget=['noteOn','keyOn','noteOff','keyOff','releaseNote'].includes(key)?resolveNoteTarget(target,key,args):null;
+          if(noteTarget&&(!noteTarget.target||!Number.isInteger(noteTarget.channel)))throw TypeError('Invalid Code note target');
           const result=Reflect.apply(member,target,args.map(value=>unwrap(value)));
-          if(['noteOn','keyOn'].includes(key)&&Number.isInteger(args[0])) {
-            if(!ownedNotes.has(target))ownedNotes.set(target,new Map());ownedNotes.get(target).set(args[0],caller);
-          } else if(['noteOff','keyOff','releaseNote'].includes(key))ownedNotes.get(target)?.delete(args[0]);
+          if(noteTarget){
+            const {target:physical,channel}=noteTarget;
+            if(['noteOn','keyOn'].includes(key)) {
+              if(!ownedNotes.has(physical))ownedNotes.set(physical,new Map());ownedNotes.get(physical).set(channel,caller);
+            }else ownedNotes.get(physical)?.delete(channel);
+          }
           if(result&&typeof result.then==='function')return waitForScope(result,caller).then(next=>{
             currentLoop=caller.loop??null;check(caller);return guarded(next,caller);
           });
@@ -254,6 +265,7 @@ export function createPlaygroundCodeRuntime({ensureReady,now,useSoundChip,suppor
       waitBeats:beats=>{ensure();return clock.waitForBeat(clock.currentBeat()+beats,scope.epoch);}});
     const log=(...args)=>{ensure();onLog(formatLogArgs(args));};
     const globals={context:runtime.context,fm:fm(),fx:guarded(effectApi,scope),FM_PRESETS,CH1:0,CH2:1,CH3:2,CH4:3,CH5:4,CH6:5,
+      readVab,prepareVabTone,exportVab,MAX_VAB_FILE_BYTES,
       PSG1:0,PSG2:1,PSG3:2,OP1:0,OP2:1,OP3:2,OP4:3,
       console:{log,warn:(...args)=>log('[warn]',...args),error:(...args)=>log('[error]',...args)},log,
       async useSoundChip(name) {

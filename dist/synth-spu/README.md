@@ -40,16 +40,22 @@ are kept; this view is source PCM rather than the current playback cursor.
 
 Full-sample editing is a Tetorica software editor. A completed stroke or numeric
 change encodes the whole sample back to SPU ADPCM in a preparation Worker, then
-stops held notes and applies the result. Re-encoding adds ADPCM quantization.
-The original bank sample is kept, and repeated edits reuse a private RAM slot
-of the same size. The first edit needs enough free SPU RAM for that copy; a
+updates its playing RAM without restarting held notes or release envelopes.
+Re-encoding adds ADPCM quantization. The first edit keeps the live address in
+place and copies the original bank sample to backup RAM under its original
+sample ID. The editor owns the live slot; repeated same-size edits reuse it.
+Saved physical-address snapshots can therefore become historical, while sample
+IDs continue to resolve the original bank sound. The first edit needs enough free SPU RAM for that copy; a
 rejected or cancelled preparation keeps the current sound. Save to presets or
 export an SPU instrument to retain the edited ADPCM and its tuning.
+An older editing slot is reused as backup only when no running voice could
+still refer to it; editing another sound while notes remain active can require
+additional free RAM.
 
 Software morph remains a **112-sample cycle** feature. Its enable control is
 disabled for a full sample, so it cannot silently replace the imported sound
 with Sine. Choosing a shape explicitly creates a new short cycle and restores
-cycle drawing and Morph. PSF / Code Live observations remain read-only; PSF
+cycle drawing and Morph. PSF sample RAM previews remain read-only; PSF
 Live previews still use only the first four packets. Noise does not display
 its silent support loop.
 **Audio** sets the root note and looping option for recordings loaded from
@@ -76,6 +82,12 @@ releasing keys that are still held.
 clears infinite releases and reverb tails, preserving samples and settings.
 Leaving the page releases keyboard notes and stops Code.
 
+The Code tab keeps computer-key performance available outside the editor,
+including after Stop. Choosing the tab keeps performance focus; click inside
+the editor to type. Text/number inputs, selects and dialogs retain their keys.
+Musical example waits use `beat()` so `setBpm()` changes note lengths and rests.
+Existing saved scripts are kept when the starter changes.
+
 **Click guard · Software** starts On for keyboard and Code's `noteOn()` /
 `noteOff()`. This is a Tetorica software feature, not a PS1 register setting.
 It uses the existing per-voice transition ramp and gives very fast releases
@@ -98,7 +110,7 @@ const channel = state.pmon.enabled ? CH2 : CH1;
 
 liveLoop("melody", async () => {
   await ps1.noteOn(channel, choose(scale("E3", "minorPentatonic", 2)));
-  await sleep(0.12);
+  await beat(0.24);
   await ps1.noteOff(channel);
   await beat(0.5);
 });
@@ -129,11 +141,20 @@ behavior.
 
 **Run** starts a fresh context; **Apply** retains `context`, named preparations
 and loops. **Stop** fades the software output and restores the edited instrument,
-sample bank, Noise, PMON and Software audio. Returning to Keyboard stops Code.
+sample bank, Noise, PMON and Software audio. Keyboard / Code changes only the input view; Run, named loops, context and FX continue. The shared Run / Apply / Stop bar remains available in Keyboard.
 Code uploads and raw changes are temporary; they do not overwrite the edited
-instrument. Selecting another instrument or editing its controls stops Code
-first. Master stays available during Code. Shortcuts are Ctrl/Cmd+Enter for Run
+instrument. Selecting a sound JSON, saved VAB Tone, **Load selected Tone** or
+**Reset to Sine** keeps Run, `context`, named preparations, loops and software
+FX. The next note uses the new sound; replacing sample data can end held notes.
+Stop keeps that newly selected editor sound. Code-uploaded samples retain
+their existing IDs until Stop, even if Code cleared its own RAM bank. Invalid
+sounds and insufficient RAM leave both banks and Run untouched. Ordinary
+parameter edits also keep Code. Master stays available during Code.
+Shortcuts are Ctrl/Cmd+Enter for Run
 and Ctrl/Cmd+Shift+Enter for Apply. Maximize Code places the editor beside Files.
+
+Use `beat()` for note lengths and rests so `setBpm()` controls the whole rhythm.
+At 120 BPM, the example's `beat(0.24)` lasts 0.12 seconds.
 
 `liveLoop()`, `livePrepare()`, `tween()` and `liveFx()` are software features.
 The hardware SPU still produces the notes and its shared reverb. `liveFx` runs
@@ -142,14 +163,33 @@ independent chip factory here. Monaco provides PS1-specific types, completion
 and navigation to readable API sources; a textarea remains available when its
 CDN cannot load.
 
-**Live from Code** is On by default. Choose CH1–CH24 to observe that channel's
-applied PCM, ADSR and shared FX in the same controls. Observation is read-only,
-does not allocate another voice and is limited to 20 updates/s; intermediate
-register writes can be missed. Turn Live off to show the edited instrument
-while Code continues. Changing that instrument then stops Code first. Stop
-returns to the authored display. Software morph appears only when its blend
-still matches the observed PCM; imported ADPCM does not have an editable
-112-point source waveform.
+**Live from Code** is On by default. Choose CH1–CH24 to see and edit that
+physical channel in the same PCM / ADSR / FX controls. Only the touched
+parameter changes: scalar edits keep its gate, sample position and musical
+pitch, and do not change another channel. Reverb and Noise clock are shared
+hardware settings. Enabling Noise changes only this CH's NON bit. PMON uses
+the preceding physical CH as a source; its helper edits that source too. CH1
+has no predecessor and cannot enable PMON. A depth edit owns its support
+sample so another carrier's modulation is not overwritten.
+
+Each touched setting is also saved to the common authored keyboard sound,
+which Stop restores. Live Off shows and edits that common sound across all
+24 channels while Code continues. Changing sample data or topology can end
+held notes, without stopping the runtime. The full imported-sample editor is
+available in the authored view; Code Live ADPCM remains a bounded sample-start
+preview, while a 112-point cycle can be edited directly. Software morph appears
+only when its blend matches the displayed cycle. Snapshots run at most 20 times
+per second, so intermediate writes can be missed.
+
+In Keyboard with Live On, keys play the selected CH. Live Off uses the existing
+round robin over the same 24 physical voices. The latest Note On owns a CH:
+old keyboard key-up / blur cannot stop a newer Code note, and an old Code
+`noteOff()` cannot stop a newer keyboard note. The previous note is not resumed.
+Raw `keyOff()` and `allNotesOff()` remain explicit physical gate actions. Code
+parameter automation does not steal a keyboard note; when Code and a knob both
+write the same setting, the last write wins. No extra SPU or virtual voice is
+created. PSF playback has its own CPU-write ownership for selected-channel
+manual controls, described below.
 
 **Files** stores `/index.js`, local modules, text/JSON and binary data separately
 from other Synths. Code and text edits save locally. Use relative `await import()`
@@ -272,7 +312,9 @@ fresh project. Export a saved `.vab` from Files to reuse it outside Tetorica.
 ### Use a VAB with the SPU API
 
 VAB is an asset format, separate from the chip's register / sample API. The
-shipped browser module exposes `readVab`, `prepareVabTone` and `exportVab`:
+shared runtime exposes `readVab`, `prepareVabTone` and `exportVab`. They are
+included in the npm payload at the package root and `ps1_vab.js` / `ps1_vab`
+subpaths, and exposed as Playground / Synth Code globals:
 
 In this Synth's **Code** tab, first choose a VAB Tone from **Preset**, then use
 `const ps1 = await useSoundChip("ps1")` and `ps1.noteOn(...)` as usual; Code
@@ -280,7 +322,7 @@ borrows the selected instrument. The following module example is for your own
 application, when it needs to choose and load a Tone programmatically.
 
 ```js
-import {readVab, prepareVabTone} from './synth-spu/spu_synth_vab.js';
+import {readVab, prepareVabTone} from 'tetorica-fm2612';
 
 // ps1 is an existing SPU client or Ps1Synth; no Tetorica JSON is required.
 async function loadVabTone(ps1, bytes, program, tone, channel = 0) {
@@ -296,9 +338,13 @@ async function loadVabTone(ps1, bytes, program, tone, channel = 0) {
 Read the VAB bytes from `fetch(...).arrayBuffer()` or your application's files,
 then call `loadVabTone`. `channel` is zero-based; normal `noteOn` / `noteOff`
 methods play it. `exportVab(bank)` preserves the complete original bank, while
-`exportVab(bank, {toneNumber: index})` extracts a one-Tone bank. These helpers
-currently ship with Playground / Synth source; they are **not yet published
-as npm exports**. The npm SPU API already provides `loadADPCM` / `setPreset`.
+`exportVab(bank, {toneNumber: index})` extracts a one-Tone bank. The standalone
+browser compatibility module `synth-spu/spu_synth_vab.js` exposes the same
+functions. `loadADPCM` / `setPreset` accept the prepared result in direct and
+asynchronous SPU clients. Public types include `Ps1VabBank`, `Ps1VabTone` and
+`Ps1VabPreparedTone`. Parsing and exporting do not create an audio device,
+fetch files or execute a PSF driver. These APIs are available in
+`tetorica-fm2612@0.2.40` and later.
 
 For **PSF1 / MiniPSF**, choose **Menu → Import → PSF set…** and select the song and all
 referenced PSFLib files together, or use **PSF folder…** in the same menu to retain library
@@ -311,7 +357,12 @@ the loaded set. Selecting a song does not play it. Select a **PSF entry** and ch
 beginning. File selection never starts audio. Master and the output monitor
 also apply to the song. The separate Play! HLE player needs no external BIOS;
 it keeps the edited SPU sample and settings intact. While the song is running,
-playing the keyboard or editing the instrument stops the preview. Loading another
+choose a PSF CH to edit its Volume, PITCH and ADSR and play that same physical
+voice from the keyboard. Later PSF CPU writes can take ownership again; an older
+key release or Pitch reset cannot stop or retune their replacement. The source
+sample RAM, programmed Start/Repeat and other 23 voices are kept. Noise keys
+trigger the envelope without assigning a musical pitch, and a PMON carrier
+keeps its preceding modulator running without transposing that pair. Loading another
 instrument, **Reset instrument**, running Code or **Stop all sound** also stops it.
 While paused in **PSF CH** view with **Live On**, the keyboard temporarily auditions the selected
 CH using the same ADPCM / Reference key or Noise Clock rules as Capture, keeping the song,
@@ -342,10 +393,21 @@ observations; turning it On returns to the remembered PSF CH. While paused in
 only the edited instrument, keeping the original song position and frozen CH state.
 Switch to a PSF CH to compare its original sound, then back to Synth to continue
 with your latest edits. **Resume** continues the original song from the paused position.
-Edits during song playback and loading another preset, VAB Tone or audio sample
-still stop the song. Stop also returns
+In Synth view, panel edits and the keyboard use the separate authored instrument
+while the source keeps playing or stays paused. Loading another preset, VAB Tone
+or audio sample retains its existing Stop behavior. Stop also returns
 to the editor. Pause and choose **Capture to Synth** to edit or save an ADPCM or Noise channel. PSF2 is not supported. Compatibility depends on the HLE
 driver environment, so not every game's PSF is guaranteed to play correctly.
+
+Live channel changes are temporary and do not rewrite saved instruments. Voice
+Volume, raw PITCH and partial ADSR edits enter the next unrendered native boundary,
+preserving the current sample cursor and envelope level. Already queued audio is
+kept: expect up to about 0.2 seconds of playback lookahead plus device latency;
+the audible Live view samples state at up to 20 Hz. Pitch wheels affect only
+still-owned manual notes. CH/Reference changes, blur and Pause release owned hand
+notes. Seek reconstructs the source program and discards temporary channel edits.
+Shared Noise, PMON, reverb and sample/topology editing remain read-only in PSF CH
+view; choose Synth to change the separate author bank.
 The active song SPU uses the same fixed MAME-derived DSP sources as the
 keyboard Synth: ADPCM, four-point Gaussian interpolation, ADSR, Noise, PMON,
 hardware main / reverb output volumes and shared reverb. The CPU's SPU register
@@ -394,7 +456,7 @@ The Live PCM graph is a read-only preview of up to 112 ADPCM samples from the
 programmed Start address, decoded with zero initial history. It is not the
 currently audible waveform, a full sample extraction or an inferred root note.
 Start / Repeat are programmed addresses, not playback cursors. Gate shows the
-last CPU KON / KOFF request; Core active is separate, and ENDX can also mark a
+last accepted CPU or manual KON / KOFF request; Core active is separate, and ENDX can also mark a
 looping block. ADSR stage widths remain illustrative. Noise and PMON show the
 selected voice's hardware flags; the Noise clock, main volumes and reverb are
 shared. Software PMON waveform / ratio / depth / decay helpers cannot be inferred
@@ -413,6 +475,15 @@ cursor, envelope stage or the rest of the song. Your editor’s shared reverb is
 kept; song master volume and custom shared effects are not copied. Software
 morph and PMON are disabled in the captured instrument. ADPCM captures also
 disable Noise; Noise captures enable it.
+
+For a looping ADPCM sample, Capture and paused keyboard audition use its single
+internal **Loop Start** marker for the new key press. The song's Repeat register
+can still contain an older address before playback reaches that marker. Its raw
+value remains in Capture diagnostics alongside the resolved loop address and
+source; the original ADPCM bytes are unchanged. If there is no marker, Repeat
+must identify an aligned packet inside the captured Start-to-END range. A true
+external loop without an internal marker remains unsupported. Capture does not
+restore a running note's forced Repeat override or future driver writes.
 
 Capture requires **Pause**, **Live On** and an available same-time RAM snapshot.
 ADPCM needs nonzero Pitch, a valid END packet and a supported contiguous loop.
@@ -511,7 +582,9 @@ Sustain Level is the Decay target. With the option off, the running note keeps
 its ADSR through release, and the next Note On reads the latest instrument
 settings. Short-cycle PCM edits update the common cycle. With the option on,
 held keyboard notes restart with the edited waveform; with it off, they are
-not retriggered. Full-sample edits stop held notes when the prepared ADPCM is applied.
+not retriggered. Full-sample edits update the current RAM without retriggering
+when the prepared ADPCM is applied; the decoder keeps its play offset and
+envelope, and may briefly bridge its already-decoded lookahead.
 Because the sample RAM is shared, this does not preserve the old waveform for
 notes that are already playing.
 
