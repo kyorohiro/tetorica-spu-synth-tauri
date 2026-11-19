@@ -10,13 +10,16 @@ import {readSpuInstrument, writeSpuInstrument, prepareAudioPcm, MAX_INSTRUMENT_B
 import {MAX_AUDIO_FILE_BYTES, prepareHostAudio} from './spu_synth_long_audio.js';
 import {MAX_VAB_FILE_BYTES, readVab, prepareVabTone,exportVab} from './spu_synth_vab.js?v=ps1-vab-api-1';
 import {PSF_FILES, readPsfFileSet, extractPsfVabs, psfRejectionSummary} from '../playground/playground_ps1_psf.js?v=ps1-vab-api-1';
+import {SPU_DOCUMENT_METHODS,editSpuInstrumentDocument,spuInstrumentDocumentChanges,displaySpuInstrumentDocument} from './instrument_document_edit.js';
 import {setupSpuCodeHost} from './code_host.js?v=draft-reconnect-1';
 import {SPU_PROJECT_FILE_BYTES} from './code_project.js?v=draft-reconnect-1';
 import {prepareVabTonePreset,prepareVabBankPresets} from './spu_bank_presets.js?v=ps1-vab-api-1';
+import {createSpuLiveHighlighter,getSpuLiveHighlightControls} from './live_highlight.js';
 import {createSpuCodeLive} from './code_live.js?v=spu-code-1';
 import {morphPcm} from './spu_synth_morph.js';
 import {createPs1InitSample} from '../js/ps1synth.js?v=ps1-oneshot-marker-1';
 import {setupSynthMenu} from '../synth/synth_menu.js';
+import {setupSynthExpandedTabs} from '../synth/synth_expanded_tabs.js';
 import {createPsfSongPreview} from './psf_song_preview.js?v=psf-manual-1';
 import {setupPsfSeekControls} from './psf_seek_controls.js?v=spu-psf-seek-1';
 import {preparePsfSongSource} from './psf_song_source.js?v=spu-psf-playback-1';
@@ -36,8 +39,18 @@ const report = error => {if(error?.name!=='AbortError')status(error?.message ?? 
 let audio = null, opening = null, state = null, stateFrame = null, epoch = 0, assetEpoch = 0, octave = 0, bend = 0;
 const notes = new Map();
 let instrumentName = 'Sine';
+// Author documents are separate from live registers (Code and PSF can write
+// those registers at any time). Only accepted documents reach the renderer.
+let acceptedInstrument=null,displayInstrument=null,documentRevision=0;
+function showInstrumentDocument(value){
+  displayInstrument=value;documentRevision++;
+  if(value){instrumentName=value.name;$('instrumentName').value=instrumentName;}
+  if(state)applyState(state);
+}
+function authorDisplay(value=state){return displayInstrument?displaySpuInstrumentDocument(value,displayInstrument,`draft-${documentRevision}`):value;}
+
 let noteSequence = 0, topologyPending = 0, switchingAudioOutput = false;
-let codeHost = null, codeLive = null, disposed = false, liveReadOnly = false;
+let codeHost = null, codeLive = null, expandedTabs = null, liveHighlighter = null, disposed = false, liveReadOnly = false;
 let clickGuardIntent = 0, clickGuardApplied = true;
 let psfSong=null;
 let psfSeekControls=null;
@@ -99,7 +112,7 @@ function applyState(next) {
   if (stateFrame !== null) return;
   stateFrame = requestAnimationFrame(() => {
     stateFrame = null;
-    panel.update(state);
+    panel.update(authorDisplay(state));
     updateSampleName();
     updateHeldStatus();
     updateCodeDisplay();
@@ -184,7 +197,7 @@ function updateCodeDisplay() {
   delete root.dataset.observationFrame;
   const readOnlyChanged=liveReadOnly!==inputBlocked;
   if (readOnlyChanged) {liveReadOnly=inputBlocked;panel.setConnected(Boolean(audio)&&!inputBlocked);}
-  let displayed=state;
+  let displayed=authorDisplay(state);
   if (observing&&live.liveState&&!seeking) {
     const snapshot=live.liveState, voice=snapshot.channels?.[live.liveVoice];
     if (voice) {
@@ -203,7 +216,7 @@ function updateCodeDisplay() {
         $('spuLiveReadout').textContent=`CH ${live.liveVoice+1} · Gate request ${voice.gate?'On':'Off'} · Core ${voice.active?'active':'inactive'} · ENV ${voice.envelope??'—'} · ENDX ${voice.ended?'set':'clear'} · PITCH ${voice.pitch} · Vol L ${voice.volumeLeft?.toFixed(3)??'—'} / R ${voice.volumeRight?.toFixed(3)??'—'} · Start ${addressText(voice.startAddress)} · Repeat ${addressText(voice.repeatAddress)} (programmed)`;
       } else {
         updateSampleName(snapshot,live.liveVoice,true);
-        $('spuLiveReadout').textContent=`CH ${live.liveVoice+1} · Gate ${voice.gate?'On':'Off'} · ENV ${voice.envelope??'—'} · PITCH ${voice.pitch} · Sample ${voice.sample??'—'}`;
+        $('spuLiveReadout').textContent=`CH ${live.liveVoice+1} · Gate ${voice.gate?'On':'Off'} · ENV ${voice.envelope??'—'} · PITCH ${voice.pitch} · Sample ${voice.sample??'—'} · Noise ${voice.noise?'On':'Off'} · Clock ${voice.noiseClock??snapshot.noiseClock??0} · PMON bit ${voice.pmon?'On':'Off'}`;
       }
     }
   } else {$('spuLiveReadout').textContent='';updateSampleName();}
@@ -214,6 +227,9 @@ function updateCodeDisplay() {
   // Off transport ticks must not redraw the authored editor or interrupt a
   // drawing gesture. Actual editor changes already arrive through applyState.
   if (displayed&&((observing&&live.liveState&&!seeking)||readOnlyChanged||viewChanged)) panel.update(displayed);
+  liveHighlighter?.update({snapshot:observing?displayed:null,following:observing,
+    visible:!document.hidden,paused:live.paused,waiting:seeking||live.liveWaiting||!live.liveState,error:live.liveError,
+    owner:fromPsf?psfSong:audio,origin:source,epoch:fromPsf?`${psfActionEpoch}:${psfViewEpoch}`:audio?.codeSession,channel:live.liveVoice});
   for (const id of ['pitchBend','keyboardPitchBend']) $(id).disabled=fromPsf?!(live.playing&&(psfView==='synth'||psfEditable)):running&&Boolean(codeHost?.isCodeMode());
   if (running) for (const input of document.querySelectorAll('[data-morph-performance-amount]'))
     input.disabled=seeking||(fromPsf?!((live.paused||live.playing)&&psfView==='synth'):false)||!displayed?.morph?.enabled||Boolean(displayed?.noise?.enabled);
@@ -277,7 +293,11 @@ async function ensureAudio() {
         try {await applyClickGuard(value);}
         catch(error){if(audio===value){audio=null;await value.dispose();}throw error;}
         instrumentName = 'Sine'; $('instrumentName').value = instrumentName;
-        codeHost?.markSoundDirty();
+        const restored=codeHost?.project.savedSettings??acceptedInstrument;
+        if(restored){await value.command('applyInstrument',[restored]);acceptedInstrument=restored;showInstrumentDocument(codeHost?.project.settings??restored);}
+        else acceptedInstrument=writeSpuInstrument(instrumentName,await value.command('getInstrument',[0]));
+        if(codeHost&&!codeHost.project.settings){codeHost.project.setSettings(acceptedInstrument);codeHost.project.setSavedSettings(acceptedInstrument);}
+        if(codeHost?.files?.isAutoApply()===false)showInstrumentDocument(codeHost.project.settings??acceptedInstrument);
         audio.setVolume(Number($('masterVolume').value));
         visualizer.connect(audio.context, audio.gain);
         panel.setConnected(true);
@@ -325,8 +345,21 @@ async function invoke(method, args = []) {
     visualizer.wake();return result;
   }
   const retainedEdit=pausedEditorMethods.has(method)?retainedPsfEditorOwner():null;
-  const codeRunning=Boolean(codeHost?.isRunning()),codeSession=audio?.codeSession,codeView=codeLive?.read(),codeTarget=codeView?.liveEnabled?codeView.liveVoice:null;
+  const codeRunning=Boolean(codeHost?.isRunning()),codeSession=audio?.codeSession,codeView=codeLive?.read(),codeTarget=codeRunning&&codeView?.liveEnabled?codeView.liveVoice:null;
   const operation=assetEpoch,current=()=>!disposed&&operation===assetEpoch&&(!retainedEdit||retainedEdit());
+  // Physical CH Live edits are direct hardware edits. Auto apply controls the
+  // common authored sound, not the independently observed Code/PSF voice.
+  if(SPU_DOCUMENT_METHODS.has(method)&&codeTarget===null&&codeHost?.files?.isAutoApply()===false){
+    codeHost.files.canEditSound();
+    let baseline=codeHost.project.settings;
+    if(!baseline){baseline=acceptedInstrument??await getNativeInstrumentDocument();codeHost.files.adoptExternalSound(baseline);}
+    if(!current())throw new DOMException('Instrument edit was superseded','AbortError');
+    if(method==='setInstrumentSample'&&args[0]?.sourceToken!==`draft-${documentRevision}`)throw new DOMException('Sample edit was superseded','AbortError');
+    const edited=editSpuInstrumentDocument(baseline,method,args);
+    codeHost.files.recordSoundEdit(edited.instrument);showInstrumentDocument(edited.instrument);
+    status('Unsaved instrument · Save to apply.');return edited.result;
+  }
+
   if(previewActive()||pausedStopping)await stopPausedKeyboard();
   if(!current())throw new DOMException('Instrument edit was superseded','AbortError');
   if(psfSong?.read().canStop)if(!await stopCodeForEdit({preservePsf:Boolean(retainedEdit),isCurrent:current}))throw new DOMException('Instrument edit was superseded','AbortError');
@@ -361,13 +394,26 @@ async function invoke(method, args = []) {
   // A live edit may expose a release/reverb tail after the display slept.
   // Monitoring remains passive, and an intervening Stop cancels this wake.
   if (method.startsWith('set') && commandEpoch === epoch&&current()) visualizer.wake();
-  if (method.startsWith('set')) codeHost?.markSoundDirty();
+  if(method.startsWith('set')){
+    if(codeTarget!==null&&SPU_DOCUMENT_METHODS.has(method)&&codeHost?.files?.isAutoApply()===false){
+      // A physical Live edit is immediate, but must not erase unrelated
+      // pending edits in the common authored JSON document.
+      const working=codeHost.project.settings,native=await getNativeInstrumentDocument();
+      const changed=editSpuInstrumentDocument(working??native,method,args).instrument;
+      codeHost.files.recordSoundEdit(changed);showInstrumentDocument(changed);
+    }else {displayInstrument=null;await codeHost?.markSoundDirty();}
+  }
   return result;
 }
 const panel = createSpuInstrumentPanel({
   root:$('spuVoicePanel'), morphPerformanceRoot:document, invoke, ensureAudioReady:ensureAudio, onError:report,
   async readSample(){
     const owner=audio;if(!owner)throw new DOMException('Audio is unavailable','AbortError');
+    if(codeHost?.files?.isAutoApply()===false){
+      if(!displayInstrument){const baseline=codeHost.project.settings??await getNativeInstrumentDocument();if(!codeHost.project.settings)codeHost.files.adoptExternalSound(baseline);showInstrumentDocument(baseline);}
+      const sound=readSpuInstrument(displayInstrument);
+      if(sound.version===1&&!sound.waveform&&!sound.noise.enabled)return {...sound.sample,sampleId:state.channels[0].sample,token:`draft-${documentRevision}`,availableEditBytes:sound.sample.adpcm.length};
+    }
     const source=await owner.command('getInstrumentSample',[0]);
     if(disposed||audio!==owner)throw new DOMException('Sample owner changed','AbortError');
     return source;
@@ -382,14 +428,21 @@ const panel = createSpuInstrumentPanel({
     return {sourceSampleId:source.sampleId,sourceToken:source.token,adpcm:encoded.adpcm};
   },
 });
+const highlightToggle=$('spuLiveHighlightToggle'),highlightPreference='tetorica-spu-synth-live-highlight';
+try{highlightToggle.checked=localStorage.getItem(highlightPreference)!=='off';}catch{}
+liveHighlighter=createSpuLiveHighlighter({controls:getSpuLiveHighlightControls($('spuVoicePanel')),enabled:highlightToggle.checked});
+highlightToggle.addEventListener('change',()=>{
+  const enabled=highlightToggle.checked;
+  try{localStorage.setItem(highlightPreference,enabled?'on':'off');}catch{}
+  liveHighlighter.setEnabled(enabled);highlightToggle.blur();updateCodeDisplay();
+});
 setupSynthMenu({document,window});
 $('synthMenuPanel').addEventListener('click',event=>{
   const action=event.target.closest('[data-spu-open-panel],[data-spu-restore-editor]');
   if(!action)return;
   // Restore the existing editor without changing Code ownership or sound.
   // A cancelled picker must not stop a running performance.
-  void codeHost?.controls.setExpanded(false);
-  if(action.dataset.spuOpenPanel)selectEditorTab(action.dataset.spuOpenPanel);
+  selectEditorTab(action.dataset.spuOpenPanel||'pcm');
 }, {capture:true});
 codeLive=createSpuCodeLive({getAudio:()=>audio,isRunning:()=>Boolean(codeHost?.isRunning()&&!document.hidden),onUpdate:updateCodeDisplay});
 for(let ch=0;ch<24;ch++)$('spuLiveChannel').append(new Option(`CH ${ch+1}`,String(ch)));
@@ -434,6 +487,8 @@ function selectEditorTab(name, focus = false) {
     button.setAttribute('aria-selected', String(active));
     button.tabIndex = active ? 0 : -1;
   }
+  expandedTabs?.showChip(selected);
+  updateCodeDisplay();
   if (focus) selected.focus();
 }
 for (const [index, button] of editorTabs.entries()) {
@@ -607,7 +662,7 @@ document.addEventListener('change', event => {
   }
 }, {capture:true});
 document.addEventListener('keydown', event => {
-  if(event.defaultPrevented||$('spuFileNameDialog')?.open||$('spuFileContextMenu')?.hidden===false)return;
+  if(event.defaultPrevented||$('spuFileNameDialog')?.open||$('spuNewCassetteDialog')?.open||$('spuFileContextMenu')?.hidden===false)return;
   if(event.key==='Escape'&&psfSong?.read().seeking){event.preventDefault();event.stopPropagation();void cancelPsfSeek().catch(report);return;}
   if(event.key==='Escape'&&event.target?.id==='psfSongSeek')return;
   if (event.target?.closest?.('select') && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End',' ','Enter','Escape','Tab'].includes(event.key)) pointerSelect = null;
@@ -631,7 +686,7 @@ document.addEventListener('visibilitychange', () => {
   codeLive.sync();
   if (document.hidden) {releaseKeyboard(true);resetBend();panel.setVisible(false);}
   else panel.setVisible(true);
-  visualizer.setVisible(!document.hidden);
+  visualizer.setVisible(!document.hidden);updateCodeDisplay();
 });
 $('sustainToggle').addEventListener('change', () => {if (!$('sustainToggle').checked) for (const [source, note] of notes) if (note.released) release(source, true);});
 for (const [id, delta] of [['octaveDown', -1], ['octaveUp', 1]]) $(id).addEventListener('click', () => {releaseKeyboard(true); octave = Math.max(-2, Math.min(2, octave + delta)); renderKeyboard();});
@@ -692,9 +747,12 @@ $('masterVolume').addEventListener('input', () => {
   if (audio) visualizer.wake();
 });
 $('instrumentName').addEventListener('change', () => {
-  instrumentName = $('instrumentName').value.trim() || 'Untitled';
-  codeHost?.markSoundDirty();
-  $('instrumentName').value = instrumentName; if (state) applyState(state);
+  const name=$('instrumentName').value.trim()||'Untitled';
+  if(codeHost?.files?.isAutoApply()===false){
+    void invoke('setInstrumentName',[name]).catch(report);return;
+  }
+  instrumentName=name;displayInstrument=null;codeHost?.markSoundDirty();
+  $('instrumentName').value=instrumentName;if(state)applyState(state);
 });
 
 const decodeAudio = createOfflineAudioDecoder({getSampleRate:() => 44100});
@@ -755,7 +813,7 @@ $('audioFileInput').addEventListener('change', async () => {
     }
     if (operation !== assetEpoch) return;
     instrumentName = file.name.slice(0, 80); $('instrumentName').value = instrumentName;
-    codeHost?.markSoundDirty();
+    displayInstrument=null;const loaded=await getNativeInstrumentDocument();codeHost?.files.adoptExternalSound(loaded);if(codeHost?.files?.isAutoApply()===false)showInstrumentDocument(loaded);
     sampleStatus(`Loaded ${file.name} · ${useHost ? 'Software audio · ' : ''}root ${noteName(rootNote)}${prepared.trimmedFrames ? ` · trimmed ${prepared.trimmedFrames} frames for the loop boundary` : ''}.`);
     applyState(await engine.inspect());
   } catch (error) {if (operation === assetEpoch && error.name !== 'AbortError') sampleStatus(error.message,true);}
@@ -1038,10 +1096,38 @@ $('presetFileInput').addEventListener('change', async () => {
     await applyInstrumentDocument(instrument,{isCurrent:()=>operation===assetEpoch});
   } catch (error) {if (operation === assetEpoch) report(error);}
 });
-async function getInstrumentDocument() {
+async function getNativeInstrumentDocument() {
   const engine=await ensureAudio();
-  return writeSpuInstrument($('instrumentName').value.trim()||'Untitled',await engine.command('getInstrument',[0]));
+  const value=writeSpuInstrument($('instrumentName').value.trim()||'Untitled',await engine.command('getInstrument',[0]));
+  acceptedInstrument=value;return value;
 }
+async function getInstrumentDocument(){
+  return codeHost?.files?.isAutoApply()===false&&codeHost.project.settings?codeHost.project.settings:getNativeInstrumentDocument();
+}
+// Files acceptance uses the same worklet transactions as controls. Sparse
+// author changes do not replay a stale musical pitch, ADSR companion or Gate.
+async function applyAcceptedInstrument(value,{applyAudio=true,displayPreset=value,isCurrent=()=>true,load=false}={}){
+  readSpuInstrument(value);if(!isCurrent())return false;
+  if(applyAudio){
+    if(audio||load){
+      const engine=await ensureAudio();if(!isCurrent())return false;
+      if(previewActive()||pausedStopping)await stopPausedKeyboard();if(!isCurrent())return false;
+      const previous=acceptedInstrument,commands=previous?spuInstrumentDocumentChanges(previous,value):null;
+      if(commands){
+        for(const [method,args]of commands){
+          if(!isCurrent())return false;
+          if(codeHost?.isRunning())await engine.command('editInstrument',[engine.codeSession,null,method,args]);
+          else await engine.command(method,args);
+        }
+      }else await engine.command('applyInstrument',[value,...(codeHost?.isRunning()?[engine.codeSession]:[])]);
+      if(!isCurrent())return false;
+      applyState(await engine.inspect());
+    }
+    acceptedInstrument=value;
+  }
+  showInstrumentDocument(displayPreset);return true;
+}
+
 async function capturePsfVoice() {
   if(disposed||capturePending||!psfOwnsLiveView())return;
   const transport=psfSong,initial=transport.read(),unavailable=captureUnavailable(initial);
@@ -1088,7 +1174,12 @@ async function capturePsfVoice() {
     if(capturePending===request){capturePending=null;updateCodeDisplay();}
   }
 }
-async function applyInstrumentDocument(value,{isCurrent=()=>true,beforeStop=()=>true,deferStopForPreflight=false,preservePausedPsf=false}={}) {
+async function applyInstrumentDocument(value,options={}) {
+  if(options.record===false)return applyAcceptedInstrument(value,options);
+  const {isCurrent=()=>true,beforeStop=()=>true,deferStopForPreflight=false,preservePausedPsf=false}=options;
+  // Explicit imports choose a new author sound; they never overwrite the
+  // previously linked JSON, including a pending manual draft.
+  displayInstrument=null;
   const instrument=readSpuInstrument(value),operation=assetEpoch,codeAtStart=Boolean(codeHost?.isRunning());
   const current=()=>!disposed&&operation===assetEpoch&&isCurrent()&&(codeAtStart||!codeHost?.isRunning());
   if(!current())return false;
@@ -1107,7 +1198,7 @@ async function applyInstrumentDocument(value,{isCurrent=()=>true,beforeStop=()=>
     // Reconcile the committed author name/state without restarting that owner
     // or claiming the cancelled Files selection as applied.
     instrumentName=instrument.name;$('instrumentName').value=instrumentName;
-    applyState(snapshot);codeHost.markSoundDirty();
+    applyState(snapshot);acceptedInstrument=value;codeHost.files.adoptExternalSound(value);if(codeHost.files.isAutoApply()===false)showInstrumentDocument(value);
     if(engine.codeSession!==session||!codeHost.isRunning())return false;
     status(`Loaded ${instrument.name}. Code continues.`);return true;
   }
@@ -1145,7 +1236,7 @@ async function applyInstrumentDocument(value,{isCurrent=()=>true,beforeStop=()=>
     await engine.command(method,args);if(!current())return false;
   }
   instrumentName=instrument.name;$('instrumentName').value=instrumentName;
-  status(`Loaded ${instrument.name}.`);applyState(await engine.inspect());codeHost?.markSoundDirty();return true;
+  status(`Loaded ${instrument.name}.`);applyState(await engine.inspect());acceptedInstrument=value;codeHost?.files.adoptExternalSound(value);if(codeHost?.files?.isAutoApply()===false)showInstrumentDocument(value);return true;
 }
 $('resetPreset').addEventListener('click', async () => {
   const operation = beginAssetOperation(); preparation?.cancel();
@@ -1170,12 +1261,12 @@ $('resetPreset').addEventListener('click', async () => {
     await engine.command('setInstrumentMorph', [{enabled:true}]);
     await engine.command('setInstrumentPmon', [{enabled:false}]);
     instrumentName = 'Sine'; $('instrumentName').value = instrumentName;
-    codeHost?.markSoundDirty();
+    displayInstrument=null;const reset=await getNativeInstrumentDocument();codeHost?.files.adoptExternalSound(reset);if(codeHost?.files?.isAutoApply()===false)showInstrumentDocument(reset);
     status('Instrument reset to Sine.'); applyState(await engine.inspect());
   } catch (error) {report(error);}
 });
 window.addEventListener('pagehide', event => {
-  if(!event.persisted){disposed=true;codeLive.dispose();psfChannelActivity.dispose();psfSeekControls?.dispose();}
+  if(!event.persisted){disposed=true;expandedTabs?.dispose();liveHighlighter?.dispose();codeLive.dispose();psfChannelActivity.dispose();psfSeekControls?.dispose();}
   epoch++; beginAssetOperation(); preparation?.cancel(); releaseKeyboard(true); panel.setVisible(false);
   if (event.persisted) visualizer.stop(); else visualizer.dispose();
   void (async()=>{
@@ -1187,12 +1278,35 @@ window.addEventListener('pagehide', event => {
 });
 renderKeyboard();
 
-codeHost=setupSpuCodeHost({ensureAudio,getAudio:()=>audio,getInstrument:getInstrumentDocument,
+codeHost=setupSpuCodeHost({ensureAudio,getAudio:()=>audio,getInstrument:getNativeInstrumentDocument,getCachedInstrument:()=>acceptedInstrument,
+  getExportNotice:()=>psfSet||vabBank?'External PSF/VAB inspector sources are not included unless saved in Files. Keep their original files separately.':'',
+  async beforeNewProject({isCurrent}){
+    beginAssetOperation();preparation?.cancel();
+    await stop();return isCurrent();
+  },
+  async beforeUndoFiles({isCurrent}){
+    beginAssetOperation();preparation?.cancel();await stop();return isCurrent();
+  },
+  async onNewProjectCommitted(){
+    psfSet=null;psfHasSongs=false;vabBank=null;vabName='';bankChoices=[];bankSaveRequest=null;
+    psfView='channel';psfViewEpoch++;
+    $('psfEntry').replaceChildren(new Option('No PSF songs',''));$('psfSongFolder').textContent='';$('psfSongFolder').hidden=true;
+    $('vabBank').replaceChildren(new Option('No sound banks',''));$('vabTone').replaceChildren(new Option('No Tone',''));
+    $('vabAvailability').textContent='';$('vabAvailability').hidden=true;$('vabUnavailableReasons').replaceChildren();$('vabUnavailableDetails').hidden=true;$('vabUnavailableDetails').open=false;
+    await psfSong.clearSource();psfSong.setLiveVoice(0);psfSong.setLiveEnabled(true);codeLive.setVoice(0);codeLive.setEnabled(true);updateBankControls();vabStatus('Load a VAB bank or PSF set.');
+    $('sampleLoadStatus').textContent='Choose a file, then play the keyboard.';
+    $('sampleRootNote').value='60';$('sampleLoop').checked=false;
+    liveHighlighter?.clear();await codeHost.controls.setExpanded(false);selectEditorTab('pcm');
+  },
+  async onWorkspaceRestored({settings,savedSettings}){
+    if(savedSettings)await applyAcceptedInstrument(savedSettings,{displayPreset:settings??savedSettings});
+    else {displayInstrument=null;acceptedInstrument=null;if(state)applyState(state);}
+  },
   async applyInstrument(value,options){beginAssetOperation();preparation?.cancel();return applyInstrumentDocument(value,options);},
   async applyVabTone({bank,toneNumber,name},options){
     const reverb=state?{preset:state.reverb.preset,volumeLeft:state.reverb.volumeLeft,volumeRight:state.reverb.volumeRight}:{preset:'off',volumeLeft:.25,volumeRight:.25};
     const instrument=prepareVabTonePreset(bank,toneNumber,{name,reverb});
-    beginAssetOperation();preparation?.cancel();return applyInstrumentDocument(instrument,options);
+    beginAssetOperation();preparation?.cancel();return applyInstrumentDocument(instrument,{...options,record:false,load:true});
   },
   async stopKeyboard(){
     await stopPausedKeyboard({releaseEdited:true});
@@ -1202,9 +1316,16 @@ codeHost=setupSpuCodeHost({ensureAudio,getAudio:()=>audio,getInstrument:getInstr
     if(audio){await audio.command('instrumentAllNotesOff');await audio.command('setInstrumentPitchBend',[0]);}
   },
   async beforeRun(){await stopPausedKeyboard({releaseEdited:true});await psfSong?.stop();beginAssetOperation();preparation?.cancel();},
-  onActivity:codeActivity,setStatus:message=>status(message),
+  onActivity:codeActivity,
+  onViewChange:mode=>{expandedTabs?.showInput(mode);updateCodeDisplay();},
+  onExpandedChange:value=>{expandedTabs?.setExpanded(value);updateCodeDisplay();},
+  setStatus:message=>status(message),
 });
-void codeHost.ready.catch(report);
+expandedTabs=setupSynthExpandedTabs({codeControls:codeHost.controls,
+  selectChip:tab=>selectEditorTab(tab.dataset.spuEditorTab),
+  elements:{editor:$('spuSynthEditor'),chipTabs:editorTabs},getChipView:tab=>tab.dataset.spuEditorTab,
+});
+void codeHost.ready.then(()=>{const value=codeHost.project.settings;if(value)showInstrumentDocument(value);}).catch(report);
 
 // Desktop adapters reroute only the final bus. SPU rendering and monitoring
 // stay in the same Web Audio graph, with no desktop API on ordinary websites.

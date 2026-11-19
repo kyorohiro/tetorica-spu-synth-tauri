@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "product": "Tetorica SPU Synth",
-  "version": "0.99.99",
+  "version": "dev",
   "builder": {
     "name": "source-copy",
     "minify": false,
@@ -15,17 +15,20 @@
     {
       "path": "synth-spu/synth.js",
       "sourcePath": "docs/synth-spu/synth.js",
-      "bytes": 84822,
-      "sha256": "8f01454e468f2a04310241c03a1b4b534496293a8cbe15944e51be1e3580c5bc",
+      "bytes": 94212,
+      "sha256": "d5869cf8190b008d42df559e9693d76e0d8d896b4b58cf7d78a63493665b03f9",
       "localImports": [
         "../js/audio_decode.js",
         "../js/ps1synth.js?v=ps1-oneshot-marker-1",
         "../playground/playground_ps1_psf.js?v=ps1-vab-api-1",
+        "../synth/synth_expanded_tabs.js",
         "../synth/synth_keyboard.js",
         "../synth/synth_menu.js",
         "./code_host.js?v=draft-reconnect-1",
         "./code_live.js?v=spu-code-1",
         "./code_project.js?v=draft-reconnect-1",
+        "./instrument_document_edit.js",
+        "./live_highlight.js",
         "./psf_capture.js?v=psf-marker-capture-1",
         "./psf_channel_activity.js?v=psf-synth-view-1",
         "./psf_paused_audition.js?v=psf-marker-audition-1",
@@ -46,14 +49,17 @@
     {
       "path": "synth-spu/spu_synth_worklet.js",
       "sourcePath": "docs/synth-spu/spu_synth_worklet.js",
-      "bytes": 62571,
-      "sha256": "02442eaaec6bfff3b3a6b3114645f3a5d4f467170e91c13486f3203dbeb6083a",
+      "bytes": 66051,
+      "sha256": "0cacf8425980d2a7879abbc11a922f75902380f63aab5f08cc4e8f1e33158cde",
       "localImports": [
         "../generated/ps1_spu_wasm.js?v=spu-long-audio-1",
+        "../js/playground_performance_processor.js",
         "../js/playground_ps1_inspector.js?v=ps1-oneshot-marker-1",
+        "../js/ps1_operations.js",
         "../js/ps1_parameters.js?v=ps1-voice-editor-1",
         "../js/ps1_resampler.js?v=ps1-mode-1",
         "../js/ps1_spu.js?v=ps1-deferred-release-1",
+        "../js/ps1_timed_processor.js",
         "../js/ps1synth.js?v=ps1-oneshot-marker-1",
         "../js/soundchip_pitch.js",
         "./spu_adpcm_preview.js",
@@ -198,8 +204,8 @@
     {
       "path": "js/playground_code_runtime.js",
       "sourcePath": "docs/js/playground_code_runtime.js",
-      "bytes": 22127,
-      "sha256": "81a61998fc054b23db8e61e1198e59089ee9b43a282fec3395b29276ca6a5480",
+      "bytes": 29907,
+      "sha256": "9bcb1b9268fa0e4fdf5aa8506d889dfca3be21ed27c0f90c6f168bd9b4339b9b",
       "localImports": [
         "./megasynth-fm-presets.js",
         "./native_fx.js",
@@ -207,9 +213,10 @@
         "./playground_clock.js",
         "./playground_execution.js",
         "./playground_live.js",
-        "./playground_log.js",
+        "./playground_log.js?v=console-table-1",
         "./playground_music.js",
         "./ps1_vab.js",
+        "./scsp_dsp_assembler.js",
         "./soundchip_pitch.js"
       ]
     },
@@ -239,8 +246,8 @@
     {
       "path": "js/playground_log.js",
       "sourcePath": "docs/js/playground_log.js",
-      "bytes": 842,
-      "sha256": "a2a19ce457264c639b1afcb53d9758491a69dec7bee26c0a503c8a07d2a98ff6",
+      "bytes": 2169,
+      "sha256": "6f9e858988686497c6beb3b07dcd5067761463994c1de1edd4f8acd506a4f0e6",
       "localImports": []
     },
     {
@@ -254,10 +261,19 @@
       ]
     },
     {
+      "path": "js/playground_performance_processor.js",
+      "sourcePath": "docs/js/playground_performance_processor.js",
+      "bytes": 31246,
+      "sha256": "1b5d84878786e96e2f5125745f313e724dedf55cbbca695904e97f1c0652c9cf",
+      "localImports": [
+        "./playground_performance_queue.js"
+      ]
+    },
+    {
       "path": "js/playground_performance_queue.js",
       "sourcePath": "docs/js/playground_performance_queue.js",
-      "bytes": 9950,
-      "sha256": "b3bfb3e11be32fdd6c861519341f39389c484d1752627e8aeb9c6fad87bf14b5",
+      "bytes": 24020,
+      "sha256": "3f70eb200e3f97ae7ae5b688066035319c71dbe3b7f7631e25fe3d455eaa3567",
       "localImports": []
     },
     {
@@ -277,6 +293,15 @@
       "bytes": 10402,
       "sha256": "f1e24d4e67d609bdecebe2bedd6271961d8ea2010081f1b4f84f0ee29a97d8e2",
       "localImports": []
+    },
+    {
+      "path": "js/ps1_operations.js",
+      "sourcePath": "docs/js/ps1_operations.js",
+      "bytes": 12840,
+      "sha256": "e56703fd42cd8e5c53308e198b91e4e0fb221b93655fceccbca0be26fa01081e",
+      "localImports": [
+        "./ps1synth.js"
+      ]
     },
     {
       "path": "js/ps1_parameters.js",
@@ -302,6 +327,35 @@
       "localImports": []
     },
     {
+      "path": "js/ps1_timed_client.js",
+      "sourcePath": "docs/js/ps1_timed_client.js",
+      "bytes": 9202,
+      "sha256": "97484ea8696d0c7042f5011f2630b8e6eb2ad158aa0a1b301e46aa61cd87dd9c",
+      "localImports": [
+        "./ps1_operations.js",
+        "./ps1_timed_state.js"
+      ]
+    },
+    {
+      "path": "js/ps1_timed_processor.js",
+      "sourcePath": "docs/js/ps1_timed_processor.js",
+      "bytes": 8433,
+      "sha256": "e7dccf550ad288005dcfb34f52fc8632196fe2a894a3f37b9be967074b394002",
+      "localImports": [
+        "./ps1_operations.js",
+        "./ps1_timed_state.js"
+      ]
+    },
+    {
+      "path": "js/ps1_timed_state.js",
+      "sourcePath": "docs/js/ps1_timed_state.js",
+      "bytes": 2063,
+      "sha256": "82c6924c96daf1802568041730d44f2d87d1e88149dcd8dc812e21d8fe24f23f",
+      "localImports": [
+        "./ps1_operations.js"
+      ]
+    },
+    {
       "path": "js/ps1_vab.js",
       "sourcePath": "docs/js/ps1_vab.js",
       "bytes": 14976,
@@ -322,8 +376,8 @@
     {
       "path": "js/ps1synth.js",
       "sourcePath": "docs/js/ps1synth.js",
-      "bytes": 21748,
-      "sha256": "efe17157a7d127cf8835a6c0c5de1a17135ef9e11a417b111b61858050fc5193",
+      "bytes": 23350,
+      "sha256": "7177eb04bca8ca02f3e5dd74b3edb0eef2374517413ba87c3ea6acac970dced5",
       "localImports": [
         "./ps1_parameters.js?v=ps1-voice-editor-1",
         "./ps1_spu.js?v=ps1-deferred-release-1",
@@ -331,10 +385,17 @@
       ]
     },
     {
+      "path": "js/scsp_dsp_assembler.js",
+      "sourcePath": "docs/js/scsp_dsp_assembler.js",
+      "bytes": 8081,
+      "sha256": "1392ea532fc4c674b97f200e6dc1d8223288b4d3e167084e26dc78152b3ddf43",
+      "localImports": []
+    },
+    {
       "path": "js/soundchip_mixer_presets.js",
       "sourcePath": "docs/js/soundchip_mixer_presets.js",
-      "bytes": 3295,
-      "sha256": "a43c6bacc2f7d2d180002fce7965f9938a7b435db34bcb2a499554f34f14d8b4",
+      "bytes": 3276,
+      "sha256": "bf842816a4ba96ad355ca9f919a8f130c1863b5abfc8e55c3784e8af719dd7bd",
       "localImports": []
     },
     {
@@ -347,13 +408,21 @@
     {
       "path": "js/tetorica_virtual_files/filesystem.js",
       "sourcePath": "docs/js/tetorica_virtual_files/filesystem.js",
-      "bytes": 20206,
-      "sha256": "25f821472b25bc58cf4b840a44111b2639013861ef14191de8bd684e973c9b41",
+      "bytes": 20639,
+      "sha256": "c74e0072c09884917896bd7af4b487799e34f83ffb5cda40896b22acf510434b",
       "localImports": [
+        "./filesystem_internal.js",
         "./path.js",
         "./reader.js",
         "./sync.js"
       ]
+    },
+    {
+      "path": "js/tetorica_virtual_files/filesystem_internal.js",
+      "sourcePath": "docs/js/tetorica_virtual_files/filesystem_internal.js",
+      "bytes": 997,
+      "sha256": "e95dcc6999942de8ef81c8f2578c346f87a655fb353d8840ae5b975104e7416b",
+      "localImports": []
     },
     {
       "path": "js/tetorica_virtual_files/path.js",
@@ -378,6 +447,18 @@
       "sha256": "7c2cb490bbf0ce036a79e1d513efcf41d1476e2ec778fe1867069a7a926432d4",
       "localImports": [
         "./path.js"
+      ]
+    },
+    {
+      "path": "js/tetorica_virtual_files/workspace.js",
+      "sourcePath": "docs/js/tetorica_virtual_files/workspace.js",
+      "bytes": 8447,
+      "sha256": "80a28574c7f151effd933ddd323a3cb797a6df6c886d700db882a978a25560f7",
+      "localImports": [
+        "./filesystem.js",
+        "./filesystem_internal.js",
+        "./path.js",
+        "./sync.js"
       ]
     },
     {
@@ -415,12 +496,12 @@
     {
       "path": "playground/playground_monaco.js",
       "sourcePath": "docs/playground/playground_monaco.js",
-      "bytes": 23166,
-      "sha256": "d85683f57eac4491f75f66b5738c9fbe11593bbba39d09747fd87d4b384748cc",
+      "bytes": 23125,
+      "sha256": "be30124bb6976ba2b82dc7fd18662619bec989a3618eb7346c7a538e56d8b1a0",
       "localImports": [
         "./playground_declarations.js?v=ps1-vab-api-1",
-        "./playground_monaco_completion.js?v=ps1-vab-api-1",
-        "./playground_monaco_definitions.js?v=huc-cdrom2-1"
+        "./playground_monaco_completion.js?v=scsp-dsp-execution-1",
+        "./playground_monaco_definitions.js?v=scsp-dsp-execution-1"
       ]
     },
     {
@@ -435,8 +516,8 @@
     {
       "path": "playground/playground_monaco_definitions.js",
       "sourcePath": "docs/playground/playground_monaco_definitions.js",
-      "bytes": 21003,
-      "sha256": "17da0b97785ea0f7ba4266e96e965a9eb6382c8975d906d445b3af5e3f7bcac9",
+      "bytes": 27126,
+      "sha256": "79d38d7dc965da0d5eb4cce008a0d7559aa0bde573755bf2ca9e76f1febb81af",
       "localImports": []
     },
     {
@@ -523,29 +604,38 @@
       ]
     },
     {
+      "path": "synth-spu/code_examples.js",
+      "sourcePath": "docs/synth-spu/code_examples.js",
+      "bytes": 2539,
+      "sha256": "0c443b059f0a0cea8f7898deb0f916c5b00ca2ad573da6f09d4ed1af322332c7",
+      "localImports": []
+    },
+    {
       "path": "synth-spu/code_files.js",
       "sourcePath": "docs/synth-spu/code_files.js",
-      "bytes": 32432,
-      "sha256": "33c148e524613312d4bc3113b6bb7ffb45e53938ffeb442b2b0c3edca40e39ac",
+      "bytes": 65151,
+      "sha256": "05bf9c4c9eaf55925594196da866aa71206c33cf8c0d4552975b6811101887bf",
       "localImports": [
         "../js/tetorica_virtual_files/filesystem.js",
         "../js/tetorica_virtual_files/path.js",
         "../playground/playground_file_tree.js",
         "./code_project.js?v=draft-reconnect-1",
         "./file_context_menu.js?v=spu-files-menu-1",
+        "./file_history.js",
         "./spu_synth_vab.js?v=ps1-vab-api-1"
       ]
     },
     {
       "path": "synth-spu/code_host.js",
       "sourcePath": "docs/synth-spu/code_host.js",
-      "bytes": 4572,
-      "sha256": "b6e75de972e6f1f15e10d59a1599e630a3d6ee47317e1a7499d6aef6879f2eea",
+      "bytes": 5333,
+      "sha256": "b54639a2e11da3f5f1859e78e83d830408052f02c194260547f6613e4a93323b",
       "localImports": [
         "../js/playground_code_runtime.js?v=ps1-vab-api-1",
         "../synth/synth_code_controls.js?v=draft-reconnect-1",
         "./code_audio.js?spu-code=1",
         "./code_declarations.js?spu-click-guard=1",
+        "./code_examples.js",
         "./code_files.js?v=draft-reconnect-1",
         "./code_project.js?v=draft-reconnect-1"
       ]
@@ -560,15 +650,18 @@
     {
       "path": "synth-spu/code_project.js",
       "sourcePath": "docs/synth-spu/code_project.js",
-      "bytes": 8725,
-      "sha256": "979ac87efd5e7dcd34541e95217765b312c1213229ec90477d573827a88b444b",
+      "bytes": 22524,
+      "sha256": "eb41a9813d32ddeaf6a810ca9b7b613ba89b6c13081d1c48ebbc335acc40f457",
       "localImports": [
+        "../js/ps1synth.js?v=ps1-oneshot-marker-1",
         "../js/tetorica_virtual_files/filesystem.js",
         "../js/tetorica_virtual_files/path.js",
+        "../js/tetorica_virtual_files/workspace.js",
         "../playground/playground_cassette.js",
-        "../synth/synth_code_project.js?code-files-scope=2",
+        "../synth/synth_code_project.js?v=huc-working-saved-1",
         "../synth/synth_project_store.js?v=draft-reconnect-1",
-        "./spu_synth_instrument.js?v=spu-split-vab-1"
+        "./spu_synth_instrument.js?v=spu-split-vab-1",
+        "./spu_synth_morph.js"
       ]
     },
     {
@@ -577,6 +670,38 @@
       "bytes": 6313,
       "sha256": "246c5bc3108826c68c85c3539c45bafa939e1ef99d69dd84cf81b416e40786c3",
       "localImports": []
+    },
+    {
+      "path": "synth-spu/file_history.js",
+      "sourcePath": "docs/synth-spu/file_history.js",
+      "bytes": 1865,
+      "sha256": "ad929d03e601ea3c5421c9bfa4a3fe401c4a0a9e1a9905e87ab6ecad1fb23991",
+      "localImports": []
+    },
+    {
+      "path": "synth-spu/instrument_document_edit.js",
+      "sourcePath": "docs/synth-spu/instrument_document_edit.js",
+      "bytes": 6252,
+      "sha256": "a666a81309471204f5834901e8f066c0083307992a28a839eeb7fd5161d7c840",
+      "localImports": [
+        "../js/ps1_parameters.js",
+        "../js/ps1_waveform.js",
+        "../js/ps1synth.js",
+        "./spu_adpcm_preview.js",
+        "./spu_synth_instrument.js",
+        "./spu_synth_morph.js",
+        "./spu_synth_noise.js",
+        "./spu_synth_pmon.js"
+      ]
+    },
+    {
+      "path": "synth-spu/live_highlight.js",
+      "sourcePath": "docs/synth-spu/live_highlight.js",
+      "bytes": 4986,
+      "sha256": "bd32b45ebdcc2bbbe99dc32dd252494b4ae7964474960a4df56c6a835f83addc",
+      "localImports": [
+        "../synth/synth_live_highlight.js"
+      ]
     },
     {
       "path": "synth-spu/psf_capture.js",
@@ -647,8 +772,8 @@
     {
       "path": "synth-spu/psf_song_preview.js",
       "sourcePath": "docs/synth-spu/psf_song_preview.js",
-      "bytes": 40565,
-      "sha256": "56be9618af947d93ebdce8b280164693708684f1d3dcb7fc20f5a8783e6efeb5",
+      "bytes": 40918,
+      "sha256": "f6607d8f2acd0c83a96112664bbd7a804f2d299a55b17913068faae089b43edd",
       "localImports": [
         "../synth/synth_code_output.js?v=scheduled-input-1",
         "./spu_synth_levels.js"
@@ -716,9 +841,10 @@
     {
       "path": "synth-spu/spu_synth_audio.js",
       "sourcePath": "docs/synth-spu/spu_synth_audio.js",
-      "bytes": 13606,
-      "sha256": "625d03566e00bb3e6153cd84a941e3a8a353781acd1fb8f861bad6c509ecd0ed",
+      "bytes": 14087,
+      "sha256": "f47da8554c995110057234a30873c25e8c9f8bdf5e17e7f52327f7d667b89805",
       "localImports": [
+        "../js/ps1_timed_client.js",
         "../js/ps1_waveform.js?v=ps1-cyclic-1",
         "../js/soundchip_mixer_presets.js",
         "./spu_synth_instrument.js?v=spu-split-vab-1",
@@ -828,14 +954,17 @@
     {
       "path": "synth-spu/spu_synth_worklet.js",
       "sourcePath": "docs/synth-spu/spu_synth_worklet.js",
-      "bytes": 62571,
-      "sha256": "02442eaaec6bfff3b3a6b3114645f3a5d4f467170e91c13486f3203dbeb6083a",
+      "bytes": 66051,
+      "sha256": "0cacf8425980d2a7879abbc11a922f75902380f63aab5f08cc4e8f1e33158cde",
       "localImports": [
         "../generated/ps1_spu_wasm.js?v=spu-long-audio-1",
+        "../js/playground_performance_processor.js",
         "../js/playground_ps1_inspector.js?v=ps1-oneshot-marker-1",
+        "../js/ps1_operations.js",
         "../js/ps1_parameters.js?v=ps1-voice-editor-1",
         "../js/ps1_resampler.js?v=ps1-mode-1",
         "../js/ps1_spu.js?v=ps1-deferred-release-1",
+        "../js/ps1_timed_processor.js",
         "../js/ps1synth.js?v=ps1-oneshot-marker-1",
         "../js/soundchip_pitch.js",
         "./spu_adpcm_preview.js",
@@ -851,24 +980,27 @@
     {
       "path": "synth-spu/synth.css",
       "sourcePath": "docs/synth-spu/synth.css",
-      "bytes": 36580,
-      "sha256": "d3c1a57beb040cb1a4cecea807eeb9c15aa527a9d036c4c04f8d11ca67b56869",
+      "bytes": 38847,
+      "sha256": "52d9006e25c3866d425c3005e81a8de20810a101d6253a97e3aa7f4b87c5e466",
       "localImports": []
     },
     {
       "path": "synth-spu/synth.js",
       "sourcePath": "docs/synth-spu/synth.js",
-      "bytes": 84822,
-      "sha256": "8f01454e468f2a04310241c03a1b4b534496293a8cbe15944e51be1e3580c5bc",
+      "bytes": 94212,
+      "sha256": "d5869cf8190b008d42df559e9693d76e0d8d896b4b58cf7d78a63493665b03f9",
       "localImports": [
         "../js/audio_decode.js",
         "../js/ps1synth.js?v=ps1-oneshot-marker-1",
         "../playground/playground_ps1_psf.js?v=ps1-vab-api-1",
+        "../synth/synth_expanded_tabs.js",
         "../synth/synth_keyboard.js",
         "../synth/synth_menu.js",
         "./code_host.js?v=draft-reconnect-1",
         "./code_live.js?v=spu-code-1",
         "./code_project.js?v=draft-reconnect-1",
+        "./instrument_document_edit.js",
+        "./live_highlight.js",
         "./psf_capture.js?v=psf-marker-capture-1",
         "./psf_channel_activity.js?v=psf-synth-view-1",
         "./psf_paused_audition.js?v=psf-marker-audition-1",
@@ -889,18 +1021,18 @@
     {
       "path": "synth/synth_code_controls.js",
       "sourcePath": "docs/synth/synth_code_controls.js",
-      "bytes": 21834,
-      "sha256": "fd41d97ef9df946fe124b15bf08b2c309e07d704fd26b2a6c518508d4d0817a2",
+      "bytes": 24393,
+      "sha256": "bd40ee193e0c2d97e7f427fcd84f1194115aff1d157040c294402c6f1f324f80",
       "localImports": [
-        "../playground/playground_monaco.js?v=synth-code-types-1&huc-source=2",
-        "./synth_code_declarations.js?v=shared-pcm-notes-1"
+        "../playground/playground_monaco.js?v=synth-code-types-1&huc-source=2&sdsp-source=1",
+        "./synth_code_declarations.js?v=megacd-cdda-1"
       ]
     },
     {
       "path": "synth/synth_code_declarations.js",
       "sourcePath": "docs/synth/synth_code_declarations.js",
-      "bytes": 7464,
-      "sha256": "5f1a800a38b76e63fbb055c0eea3a4277b75e35cc9270ce1f0bdd1dd682584e6",
+      "bytes": 8299,
+      "sha256": "120562264e16dbe764955516da37bd44eee03855fe39fbbde3a04761afe1ead0",
       "localImports": []
     },
     {
@@ -913,8 +1045,8 @@
     {
       "path": "synth/synth_code_project.js",
       "sourcePath": "docs/synth/synth_code_project.js",
-      "bytes": 1623,
-      "sha256": "7fbc1f8b5df80b2fbbfb4d19fa1f36906563f8762317466102ba19d228d17026",
+      "bytes": 2161,
+      "sha256": "1fc9a746649eb98ad9dfaca8a82dd7bdb2087f4e601575e17c32b6c46c812077",
       "localImports": [
         "../js/tetorica_virtual_files/filesystem.js",
         "../js/tetorica_virtual_files/path.js",
@@ -930,6 +1062,13 @@
       "localImports": []
     },
     {
+      "path": "synth/synth_expanded_tabs.js",
+      "sourcePath": "docs/synth/synth_expanded_tabs.js",
+      "bytes": 8706,
+      "sha256": "e65642cdfe5ea780115b98c65d8bbbf0506da85395559a532edbd72f321b4fea",
+      "localImports": []
+    },
+    {
       "path": "synth/synth_keyboard.js",
       "sourcePath": "docs/synth/synth_keyboard.js",
       "bytes": 10010,
@@ -937,6 +1076,13 @@
       "localImports": [
         "../js/soundchip_pitch.js"
       ]
+    },
+    {
+      "path": "synth/synth_live_highlight.js",
+      "sourcePath": "docs/synth/synth_live_highlight.js",
+      "bytes": 3330,
+      "sha256": "b4e7c5e6245820d8d6a65af984d176739f3360887b2c2928fb0117a52c689c19",
+      "localImports": []
     },
     {
       "path": "synth/synth_menu.js",
@@ -1053,8 +1199,8 @@
     },
     {
       "path": "docs/js/playground_code_runtime.js",
-      "bytes": 22127,
-      "sha256": "81a61998fc054b23db8e61e1198e59089ee9b43a282fec3395b29276ca6a5480"
+      "bytes": 29907,
+      "sha256": "9bcb1b9268fa0e4fdf5aa8506d889dfca3be21ed27c0f90c6f168bd9b4339b9b"
     },
     {
       "path": "docs/js/playground_duration.js",
@@ -1073,8 +1219,8 @@
     },
     {
       "path": "docs/js/playground_log.js",
-      "bytes": 842,
-      "sha256": "a2a19ce457264c639b1afcb53d9758491a69dec7bee26c0a503c8a07d2a98ff6"
+      "bytes": 2169,
+      "sha256": "6f9e858988686497c6beb3b07dcd5067761463994c1de1edd4f8acd506a4f0e6"
     },
     {
       "path": "docs/js/playground_music.js",
@@ -1082,9 +1228,14 @@
       "sha256": "26fb0f1839616deb531b7f2cfa6ad0b7049e9d53c9c045b7231024e69209b7d6"
     },
     {
+      "path": "docs/js/playground_performance_processor.js",
+      "bytes": 31246,
+      "sha256": "1b5d84878786e96e2f5125745f313e724dedf55cbbca695904e97f1c0652c9cf"
+    },
+    {
       "path": "docs/js/playground_performance_queue.js",
-      "bytes": 9950,
-      "sha256": "b3bfb3e11be32fdd6c861519341f39389c484d1752627e8aeb9c6fad87bf14b5"
+      "bytes": 24020,
+      "sha256": "3f70eb200e3f97ae7ae5b688066035319c71dbe3b7f7631e25fe3d455eaa3567"
     },
     {
       "path": "docs/js/playground_ps1_inspector.js",
@@ -1095,6 +1246,11 @@
       "path": "docs/js/ps1_adpcm_encoder.js",
       "bytes": 10402,
       "sha256": "f1e24d4e67d609bdecebe2bedd6271961d8ea2010081f1b4f84f0ee29a97d8e2"
+    },
+    {
+      "path": "docs/js/ps1_operations.js",
+      "bytes": 12840,
+      "sha256": "e56703fd42cd8e5c53308e198b91e4e0fb221b93655fceccbca0be26fa01081e"
     },
     {
       "path": "docs/js/ps1_parameters.js",
@@ -1112,6 +1268,21 @@
       "sha256": "d7fca7f2e4e9b7292cb5157d6e9ea1df67dd98b6facae478063f44864ae67769"
     },
     {
+      "path": "docs/js/ps1_timed_client.js",
+      "bytes": 9202,
+      "sha256": "97484ea8696d0c7042f5011f2630b8e6eb2ad158aa0a1b301e46aa61cd87dd9c"
+    },
+    {
+      "path": "docs/js/ps1_timed_processor.js",
+      "bytes": 8433,
+      "sha256": "e7dccf550ad288005dcfb34f52fc8632196fe2a894a3f37b9be967074b394002"
+    },
+    {
+      "path": "docs/js/ps1_timed_state.js",
+      "bytes": 2063,
+      "sha256": "82c6924c96daf1802568041730d44f2d87d1e88149dcd8dc812e21d8fe24f23f"
+    },
+    {
       "path": "docs/js/ps1_vab.js",
       "bytes": 14976,
       "sha256": "1f5b5f0a1f4fce7935b27a805aeccce24c1623e6f0ce5951c27639b3b5639a87"
@@ -1123,13 +1294,18 @@
     },
     {
       "path": "docs/js/ps1synth.js",
-      "bytes": 21748,
-      "sha256": "efe17157a7d127cf8835a6c0c5de1a17135ef9e11a417b111b61858050fc5193"
+      "bytes": 23350,
+      "sha256": "7177eb04bca8ca02f3e5dd74b3edb0eef2374517413ba87c3ea6acac970dced5"
+    },
+    {
+      "path": "docs/js/scsp_dsp_assembler.js",
+      "bytes": 8081,
+      "sha256": "1392ea532fc4c674b97f200e6dc1d8223288b4d3e167084e26dc78152b3ddf43"
     },
     {
       "path": "docs/js/soundchip_mixer_presets.js",
-      "bytes": 3295,
-      "sha256": "a43c6bacc2f7d2d180002fce7965f9938a7b435db34bcb2a499554f34f14d8b4"
+      "bytes": 3276,
+      "sha256": "bf842816a4ba96ad355ca9f919a8f130c1863b5abfc8e55c3784e8af719dd7bd"
     },
     {
       "path": "docs/js/soundchip_pitch.js",
@@ -1138,8 +1314,13 @@
     },
     {
       "path": "docs/js/tetorica_virtual_files/filesystem.js",
-      "bytes": 20206,
-      "sha256": "25f821472b25bc58cf4b840a44111b2639013861ef14191de8bd684e973c9b41"
+      "bytes": 20639,
+      "sha256": "c74e0072c09884917896bd7af4b487799e34f83ffb5cda40896b22acf510434b"
+    },
+    {
+      "path": "docs/js/tetorica_virtual_files/filesystem_internal.js",
+      "bytes": 997,
+      "sha256": "e95dcc6999942de8ef81c8f2578c346f87a655fb353d8840ae5b975104e7416b"
     },
     {
       "path": "docs/js/tetorica_virtual_files/path.js",
@@ -1155,6 +1336,11 @@
       "path": "docs/js/tetorica_virtual_files/sync.js",
       "bytes": 5701,
       "sha256": "7c2cb490bbf0ce036a79e1d513efcf41d1476e2ec778fe1867069a7a926432d4"
+    },
+    {
+      "path": "docs/js/tetorica_virtual_files/workspace.js",
+      "bytes": 8447,
+      "sha256": "80a28574c7f151effd933ddd323a3cb797a6df6c886d700db882a978a25560f7"
     },
     {
       "path": "docs/playground/playground_cassette.js",
@@ -1178,8 +1364,8 @@
     },
     {
       "path": "docs/playground/playground_monaco.js",
-      "bytes": 23166,
-      "sha256": "d85683f57eac4491f75f66b5738c9fbe11593bbba39d09747fd87d4b384748cc"
+      "bytes": 23125,
+      "sha256": "be30124bb6976ba2b82dc7fd18662619bec989a3618eb7346c7a538e56d8b1a0"
     },
     {
       "path": "docs/playground/playground_monaco_completion.js",
@@ -1188,8 +1374,8 @@
     },
     {
       "path": "docs/playground/playground_monaco_definitions.js",
-      "bytes": 21003,
-      "sha256": "17da0b97785ea0f7ba4266e96e965a9eb6382c8975d906d445b3af5e3f7bcac9"
+      "bytes": 27126,
+      "sha256": "79d38d7dc965da0d5eb4cce008a0d7559aa0bde573755bf2ca9e76f1febb81af"
     },
     {
       "path": "docs/playground/playground_ps1_envelope.js",
@@ -1223,8 +1409,8 @@
     },
     {
       "path": "docs/playground/tetorica-playground-globals.d.ts",
-      "bytes": 143235,
-      "sha256": "cb5f91e6de2fe80670d580af69b883476ef64e774d41d12c94045c986ce98889"
+      "bytes": 170942,
+      "sha256": "02255715c4246c26f2556258e1aa12db34cd3fd5c4ce835e2ecb05e3b183addc"
     },
     {
       "path": "docs/playground/tetorica-playground-ps1.d.ts",
@@ -1248,8 +1434,8 @@
     },
     {
       "path": "docs/synth-spu/README.md",
-      "bytes": 41445,
-      "sha256": "adb412d7f3ce7b9061e219b5fc0e9d216359eb822d3f0d28ec6c7b4109cfc9b1"
+      "bytes": 46657,
+      "sha256": "ec44939d2350bdce6e6483196e2015ae38e7793dd1792a2633cf817912f05116"
     },
     {
       "path": "docs/synth-spu/code_audio.js",
@@ -1262,14 +1448,19 @@
       "sha256": "6314a11e62d5a8a83797399c486d306eb5ff9914e04a5856d0da360c3a519199"
     },
     {
+      "path": "docs/synth-spu/code_examples.js",
+      "bytes": 2539,
+      "sha256": "0c443b059f0a0cea8f7898deb0f916c5b00ca2ad573da6f09d4ed1af322332c7"
+    },
+    {
       "path": "docs/synth-spu/code_files.js",
-      "bytes": 32432,
-      "sha256": "33c148e524613312d4bc3113b6bb7ffb45e53938ffeb442b2b0c3edca40e39ac"
+      "bytes": 65151,
+      "sha256": "05bf9c4c9eaf55925594196da866aa71206c33cf8c0d4552975b6811101887bf"
     },
     {
       "path": "docs/synth-spu/code_host.js",
-      "bytes": 4572,
-      "sha256": "b6e75de972e6f1f15e10d59a1599e630a3d6ee47317e1a7499d6aef6879f2eea"
+      "bytes": 5333,
+      "sha256": "b54639a2e11da3f5f1859e78e83d830408052f02c194260547f6613e4a93323b"
     },
     {
       "path": "docs/synth-spu/code_live.js",
@@ -1278,13 +1469,18 @@
     },
     {
       "path": "docs/synth-spu/code_project.js",
-      "bytes": 8725,
-      "sha256": "979ac87efd5e7dcd34541e95217765b312c1213229ec90477d573827a88b444b"
+      "bytes": 22524,
+      "sha256": "eb41a9813d32ddeaf6a810ca9b7b613ba89b6c13081d1c48ebbc335acc40f457"
     },
     {
       "path": "docs/synth-spu/file_context_menu.js",
       "bytes": 6313,
       "sha256": "246c5bc3108826c68c85c3539c45bafa939e1ef99d69dd84cf81b416e40786c3"
+    },
+    {
+      "path": "docs/synth-spu/file_history.js",
+      "bytes": 1865,
+      "sha256": "ad929d03e601ea3c5421c9bfa4a3fe401c4a0a9e1a9905e87ab6ecad1fb23991"
     },
     {
       "path": "docs/synth-spu/icon.png",
@@ -1293,8 +1489,18 @@
     },
     {
       "path": "docs/synth-spu/index.html",
-      "bytes": 28305,
-      "sha256": "6a7bb962e8cbd00640973704e2d4314102e269515745f99c17b0289156eeae41"
+      "bytes": 29275,
+      "sha256": "8ad130c4eaf8c2ae111d11c923f712c8f5a32d98e49eb4087f814466fde9f46a"
+    },
+    {
+      "path": "docs/synth-spu/instrument_document_edit.js",
+      "bytes": 6252,
+      "sha256": "a666a81309471204f5834901e8f066c0083307992a28a839eeb7fd5161d7c840"
+    },
+    {
+      "path": "docs/synth-spu/live_highlight.js",
+      "bytes": 4986,
+      "sha256": "bd32b45ebdcc2bbbe99dc32dd252494b4ae7964474960a4df56c6a835f83addc"
     },
     {
       "path": "docs/synth-spu/psf_capture.js",
@@ -1333,8 +1539,8 @@
     },
     {
       "path": "docs/synth-spu/psf_song_preview.js",
-      "bytes": 40565,
-      "sha256": "56be9618af947d93ebdce8b280164693708684f1d3dcb7fc20f5a8783e6efeb5"
+      "bytes": 40918,
+      "sha256": "f6607d8f2acd0c83a96112664bbd7a804f2d299a55b17913068faae089b43edd"
     },
     {
       "path": "docs/synth-spu/psf_song_source.js",
@@ -1368,8 +1574,8 @@
     },
     {
       "path": "docs/synth-spu/spu_synth_audio.js",
-      "bytes": 13606,
-      "sha256": "625d03566e00bb3e6153cd84a941e3a8a353781acd1fb8f861bad6c509ecd0ed"
+      "bytes": 14087,
+      "sha256": "f47da8554c995110057234a30873c25e8c9f8bdf5e17e7f52327f7d667b89805"
     },
     {
       "path": "docs/synth-spu/spu_synth_instrument.js",
@@ -1428,28 +1634,28 @@
     },
     {
       "path": "docs/synth-spu/spu_synth_worklet.js",
-      "bytes": 62571,
-      "sha256": "02442eaaec6bfff3b3a6b3114645f3a5d4f467170e91c13486f3203dbeb6083a"
+      "bytes": 66051,
+      "sha256": "0cacf8425980d2a7879abbc11a922f75902380f63aab5f08cc4e8f1e33158cde"
     },
     {
       "path": "docs/synth-spu/synth.css",
-      "bytes": 36580,
-      "sha256": "d3c1a57beb040cb1a4cecea807eeb9c15aa527a9d036c4c04f8d11ca67b56869"
+      "bytes": 38847,
+      "sha256": "52d9006e25c3866d425c3005e81a8de20810a101d6253a97e3aa7f4b87c5e466"
     },
     {
       "path": "docs/synth-spu/synth.js",
-      "bytes": 84822,
-      "sha256": "8f01454e468f2a04310241c03a1b4b534496293a8cbe15944e51be1e3580c5bc"
+      "bytes": 94212,
+      "sha256": "d5869cf8190b008d42df559e9693d76e0d8d896b4b58cf7d78a63493665b03f9"
     },
     {
       "path": "docs/synth/synth_code_controls.js",
-      "bytes": 21834,
-      "sha256": "fd41d97ef9df946fe124b15bf08b2c309e07d704fd26b2a6c518508d4d0817a2"
+      "bytes": 24393,
+      "sha256": "bd40ee193e0c2d97e7f427fcd84f1194115aff1d157040c294402c6f1f324f80"
     },
     {
       "path": "docs/synth/synth_code_declarations.js",
-      "bytes": 7464,
-      "sha256": "5f1a800a38b76e63fbb055c0eea3a4277b75e35cc9270ce1f0bdd1dd682584e6"
+      "bytes": 8299,
+      "sha256": "120562264e16dbe764955516da37bd44eee03855fe39fbbde3a04761afe1ead0"
     },
     {
       "path": "docs/synth/synth_code_output.js",
@@ -1458,8 +1664,8 @@
     },
     {
       "path": "docs/synth/synth_code_project.js",
-      "bytes": 1623,
-      "sha256": "7fbc1f8b5df80b2fbbfb4d19fa1f36906563f8762317466102ba19d228d17026"
+      "bytes": 2161,
+      "sha256": "1fc9a746649eb98ad9dfaca8a82dd7bdb2087f4e601575e17c32b6c46c812077"
     },
     {
       "path": "docs/synth/synth_draft_store.js",
@@ -1467,9 +1673,19 @@
       "sha256": "e5425ddf930f0860531aa8566c6ed122577598447876c17b1ce10384f96335b6"
     },
     {
+      "path": "docs/synth/synth_expanded_tabs.js",
+      "bytes": 8706,
+      "sha256": "e65642cdfe5ea780115b98c65d8bbbf0506da85395559a532edbd72f321b4fea"
+    },
+    {
       "path": "docs/synth/synth_keyboard.js",
       "bytes": 10010,
       "sha256": "b7dc1daea64aa6e061bfdb2295010ee24eddaba51ab7ab6cf87c0f751be7c795"
+    },
+    {
+      "path": "docs/synth/synth_live_highlight.js",
+      "bytes": 3330,
+      "sha256": "b4e7c5e6245820d8d6a65af984d176739f3360887b2c2928fb0117a52c689c19"
     },
     {
       "path": "docs/synth/synth_menu.js",
@@ -2499,9 +2715,9 @@
   ],
   "sourceArchive": {
     "path": "sources/spu-synth-browser-inputs.zip",
-    "files": 308,
-    "bytes": 3496337,
-    "sha256": "b6e888af31759d27f1a4892cb2181d0e229f0acd92feff2b30fc0912a2fc2dc2"
+    "files": 322,
+    "bytes": 3563483,
+    "sha256": "80496cca6a51bb67cabacaa3e209a134c715f19d6d4b9d98605c8724275b93e2"
   },
   "unchangedFactory": {
     "path": "generated/ps1_spu_wasm.js",
@@ -2569,7 +2785,7 @@
     "spu": {
       "sourceRoot": "sources/psf-player/third_party/tetorica-soundchip-native/vendor/mame-ps1-spu",
       "license": "BSD-3-Clause",
-      "sdkVersion": "0.1.8-huc-state",
+      "sdkVersion": "0.1.8-fm2608-source-mixer",
       "files": [
         {
           "path": "spu.cpp",
@@ -3906,12 +4122,12 @@
   "sdk": {
     "schemaVersion": 1,
     "name": "tetorica-soundchip-native",
-    "version": "0.1.8-huc-state",
+    "version": "0.1.8-fm2608-source-mixer",
     "sourceCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
-    "archiveName": "tetorica-soundchip-native-0.1.8-huc-state-sources.zip",
-    "archiveSha256": "7fdb39e2c648ea1498279134560579ead409ab302f36d8c9ae7a61d8c4aa712d",
-    "manifestSha256": "e839739e9e7afc68003edc9c81d90535a2f949f6ab6c886dfe9059cf434be31d",
-    "fileCount": 481,
+    "archiveName": "tetorica-soundchip-native-0.1.8-fm2608-source-mixer-sources.zip",
+    "archiveSha256": "9527a31da7f6d4d13464661d8fb7c3342f1045e41906a90d6ca2029e360af76f",
+    "manifestSha256": "0d1b6ec6760de1d6dc412f041ad88c9dcd939f1ebc15bcfd2c55f3eba16921bd",
+    "fileCount": 484,
     "unpublished": true,
     "localCandidate": {
       "baseCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
@@ -3923,17 +4139,30 @@
         "catalog/source_inventory.json",
         "docs/huc6280-local-candidate.json",
         "docs/huc6280-state.md",
+        "docs/ym2608-source-mixer.md",
         "native/CMakeLists.txt",
         "native/include/tetorica/huc6280.hpp",
         "native/include/tetorica/huc6280_state.h",
         "native/tests/huc6280_state_fixture.cpp",
         "scripts/build_huc6280_wasm.sh",
+        "scripts/build_spc_wasm.sh",
+        "scripts/build_ym2608_wasm.sh",
         "sdk.json",
         "tests/huc6280_state_wasm_smoke.mjs",
+        "tests/ym2608_output_gains_wasm_smoke.mjs",
+        "tests/ym2608_source_gains_wasm_smoke.mjs",
+        "vendor/mame-ay8910/README.md",
+        "vendor/mame-ay8910/ay8910.cpp",
+        "vendor/mame-ay8910/ay8910.h",
         "vendor/mame-huc6280/README.md",
         "vendor/mame-huc6280/huc6280.cpp",
         "vendor/mame-huc6280/huc6280.h",
-        "wasm/huc6280_wasm.cpp"
+        "vendor/snes-spc/README.md",
+        "vendor/snes-spc/snes_spc/SNES_SPC.h",
+        "wasm/ay8910_wasm.cpp",
+        "wasm/huc6280_wasm.cpp",
+        "wasm/spc_wasm.cpp",
+        "wasm/ym2608_wasm.cpp"
       ]
     }
   },
@@ -3942,7 +4171,7 @@
     "sourceInputs": 24,
     "bundleFiles": 28,
     "fixedSdkArtifact": true,
-    "sdkVersion": "0.1.8-huc-state",
+    "sdkVersion": "0.1.8-fm2608-source-mixer",
     "upstream": "MAME a64a5d6602b19f67e091a4491f0c851a9dacf79d",
     "rebuilt": null
   }

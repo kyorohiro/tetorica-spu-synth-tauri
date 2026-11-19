@@ -192,17 +192,32 @@ created. PSF playback has its own CPU-write ownership for selected-channel
 manual controls, described below.
 
 **Files** stores `/index.js`, local modules, text/JSON and binary data separately
-from other Synths. Code and text edits save locally. Use relative `await import()`
-and `await file()` for project resources. **Save to presets** beside Instrument
-name, or **Save sound** in Files, writes the current edited sound and its sample
-to `/presets/<instrument name>.spu.json`. Change **Instrument name** before saving
+from other Synths. **Auto apply** is On by default: file edits are accepted
+immediately and valid edits to the selected SPU JSON update the sound. Controls
+and PCM edits update that same JSON; the first control edit after loading a
+native bank creates a separate editable JSON document. Original VAB/VH/VB and
+PSF source bytes remain unchanged.
+
+Turn **Auto apply** Off to keep working edits separate from saved files. A **●**
+marks unsaved changes. **Save** (Ctrl/Cmd+S) accepts the selected file; **Save all**
+accepts every file. **Discard / Discard all** restore saved content. Controls,
+PCM drawing and valid JSON drafts remain visible, while the saved instrument
+continues sounding until Save. Invalid JSON stays editable and never replaces
+the last playable instrument. Physical Live CH controls remain direct edits to
+Code/PSF, independently of this common instrument's draft policy.
+
+**Run / Apply** explicitly uses saved JavaScript, modules and project data;
+saving does not execute Code. Relative `await import()` and `await file()` use
+that saved project. Sound acceptance keeps Code's loops, context and software
+FX running. Changing Keyboard / Code mode is independent of file selection.
+Choose **Code** to see or edit text; selecting a preset does not force that mode.
+
+**Save to presets** beside Instrument name, or **＋ Instrument** in Files, saves
+the current edited sound and its sample to a new
+`/presets/<instrument name>.spu.json`. Change **Instrument name** before saving
 to choose a name. Existing files are kept; repeated names get `(2)`, `(3)`, etc.
-Saving opens Files and selects the new preset without changing Keyboard / Code
-mode, editor focus or the current performance. Selecting a file also keeps the
-current mode: choose **Code** when you want to see or edit its text. Selecting a
-saved sound JSON applies it, and its text is prepared in the shared editor. JSON
-and other text edits save locally; **Run / Apply** are available only for
-JavaScript. Select a sound JSON again to apply its updated settings.
+This named copy is distinct from **Save**, which accepts changes to an existing
+file. New instruments are saved even when Auto apply is Off.
 
 The **Preset** selector beside Instrument name lists standard VAB Program / Tone
 choices and supplemental SPU JSON under `/presets`, including nested folders.
@@ -222,12 +237,85 @@ chosen `.spu.json` path. Opening the menu itself does not load or play anything.
 Escape or an outside click closes it.
 Recalling an identical loaded ADPCM sample reuses it, including its tuning and
 loop settings, so switching saved sounds does not keep consuming SPU RAM.
-Only explicitly saved sounds become preset files; opening a bank does not
-expand every Tone into a separate file. **Export project / Import project** retains Files and the selected Code
-file. The project import / export commands are in Menu, with project files
-and selected-file export. Restoring files never runs Code, creates audio or automatically loads an
-instrument. Project ZIPs and their expanded contents are limited to 16 MiB;
+Opening a bank does not expand every Tone into a separate file.
+**Menu → Import / Export → Cassette · ZIP** retains saved files, working recovery
+differences, the selected document and Auto apply. Ordinary ZIP entries contain
+saved content; Tetorica's manifest restores unsaved edits as well. Unchanged
+native banks and other binary files are not duplicated. Older SPU projects
+migrate with Auto apply On. Local project recovery never starts Code or creates
+audio; enabling audio restores the accepted instrument and keeps its draft
+visible. Importing a Cassette retires the previous performance and restores its
+accepted instrument when audio is already active. ZIPs and their expanded
+contents are limited to 16 MiB;
 use **Menu → Export → Instrument · SPU JSON** for larger Software audio instruments.
+
+**Highlight changes** beside Live is On by default. Observed scalar changes
+briefly highlight the corresponding visible control: ADSR, source/Noise,
+Reverb, physical PSF pitch/levels, and the displayed Code PMON/Morph parameters.
+Its On/Off preference is stored separately for SPU. Pause, switching CH/source,
+Live Off and opening a previously hidden panel start a fresh comparison;
+focused controls are left alone. It follows the existing Live snapshots, so
+intermediate writes between snapshots can be missed. PCM/sample arrays and
+waveform previews are not diffed. Highlighting adds no polling or sound changes.
+
+## Files Undo
+
+**Undo files** restores the complete Files snapshot from before the last
+recorded operation: saved and working versions, pending renames, selected
+file/editor mode and authored sound. It covers create/duplicate/rename/delete,
+file or Cassette import, explicit preset/bank saves, Save/Discard, Auto apply
+changes and New Cassette. Edits made after that snapshot are replaced too.
+Ordinary text typing and knob strokes do not add Files history entries;
+Monaco's normal text undo shortcuts remain independent.
+
+Undo stops the current keyboard, Code and PSF performance, restores the accepted
+sound and displays its working draft. It does not press Run/Play, re-trigger
+notes, or open audio when cold. Source files are restored byte-for-byte, but
+external PSF/VAB inspector sessions and playback positions are not rebuilt.
+Load the original source files again when you need their inspector session.
+
+History lasts only for this page session, with up to 20 entries and a 32 MiB
+estimated retained-data budget. Oldest entries are evicted. An operation too
+large to retain completes with an Undo-unavailable notice and clears older
+history. History is not exported or saved locally. If restoration fails, the
+current files and the Undo entry are kept for retry. A local save failure leaves
+the restored files usable and exportable in memory.
+
+## New Cassette
+
+**Menu → New → Cassette…** opens a confirmation dialog. **Cancel** keeps the
+current performance and files. **Export current & create** downloads the current
+Cassette, including saved files and working recovery data, before replacing it.
+A failed or cancelled export keeps the current project and performance.
+**Create without export** replaces it directly.
+
+The new Cassette contains the original starter `/index.js` and default Sine
+sound with Software morph enabled, Noise/PMON disabled and Reverb Off. It stops
+Code, PSF and held notes, clears the old PSF/VAB inspector sources, and returns
+to the compact PCM/Keyboard view. It does not run Code or create audio when
+started cold. Master, Auto apply and Highlight preferences are retained.
+
+Cassette export includes Files and the authored instrument, not external
+PSF/VAB inspector sources that have not been saved in Files. The dialog flags
+this when such a source is loaded; keep the original source files separately.
+Preparation and export happen before stopping the current performance. If a
+later sound/editor restoration fails, previous files and instrument data are
+restored; a retired performance is not automatically restarted. Local storage
+failure leaves the new Cassette usable in memory and available for Export.
+
+## Code workspace layout
+
+The **Code / Synth** buttons beside **Files** select the layout. **Code** opens
+the existing editor beside Files. Its expanded tab row contains **Code, PCM,
+ADSR, FX, Audio, PSF / VAB, Keyboard**. Choosing an instrument panel or Keyboard
+keeps this expanded layout; return to Code without replacing its editor,
+source, cursor or running performance. Arrow keys, Home and End move through
+this combined tab row. Narrow windows wrap tabs without clipping their names.
+
+**Run / Apply / Stop** remain above the expanded views, and **Master** remains
+in the header. **Synth**, or the restore icon, returns to the compact layout.
+Layout changes do not start or stop Code, change the sound, or retire PSF
+playback/Pause. The import menu opens its existing panel in the current layout.
 
 ## Instrument display
 

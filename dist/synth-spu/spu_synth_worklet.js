@@ -1,3 +1,6 @@
+import {createProcessorPerformance} from '../js/playground_performance_processor.js';
+import {createPs1TimedProcessor,ps1TimedCommandCost} from '../js/ps1_timed_processor.js';
+import {capturePs1OperationState} from '../js/ps1_operations.js';
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, kyorohiro.
 import factory from '../generated/ps1_spu_wasm.js?v=spu-long-audio-1';
@@ -20,7 +23,7 @@ import {validateHostPcm} from './spu_synth_long_audio.js';
 const EDITOR_METHODS = new Set(['auditionOn', 'auditionOff', 'auditionAllOff', 'setWaveform', 'setPreset', 'setChannel', 'setEnvelope', 'setReverb', 'setPitch', 'setFrequency', 'setNote']);
 const SYNTH_METHODS = new Set(['loadADPCM', 'getPreset', 'snapshot', 'noteOn', 'noteOff', 'keyOn', 'keyOff', 'allNotesOff', '_auditionKeyOn', '_auditionKeyOff', '_refreshEnvelope']);
 const READ_METHODS = new Set(['inspect', 'getState', 'getEditorState', 'getPreset', 'getInstrument', 'getInstrumentSample', 'snapshot', 'findADPCM']);
-const CODE_METHODS = new Set(['loadADPCM','getPreset','setPreset','setChannel','setEnvelope','setReverb','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff','allNotesOff','reset','getState','snapshot','_setAuditionNoise']);
+const CODE_METHODS = new Set(['loadADPCM','getPreset','setPreset','setChannel','setEnvelope','setReverb','setNoiseEnabled','setNoiseClock','setPmonEnabled','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff','allNotesOff','reset','getState','snapshot','_setAuditionNoise']);
 const codeCancelled=()=>{const error=new Error('SPU Code session stopped');error.name='AbortError';return error;};
 
 /** One SPU and its fixed-rate resampler. Rendering has no UI polling, script
@@ -50,12 +53,19 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
     this.codeGates = new Set();
     this.keyboardOwners=new Map();
     this.keyboardModulators=new Map();
+    this.codeHardwareNoise=new Map();this.codeHardwarePmon=new Map();this.codeHardwareNoiseClock=null;
     this.codePmonEdits=new Map();this.codeNoiseEdits=new Map();this.codeMorphEdits=new Map();
     this.adpcmPreviews = createSpuAdpcmPreviewCache();
     // Full imported-sample edits own one private slot. Identity tokens are
     // independent of reusable numeric sample IDs and temporary Code banks.
     this.samplePcm = {sequence:0,revision:0,byteSequence:0,bytes:new WeakMap(),slotId:null};
     this.voices = new SpuRoundRobinVoices();
+    this.timedFrame=0;this.timedIdentity=`spu:${Math.random().toString(36).slice(2)}`;
+    this.performance=createProcessorPerformance({chip:'ps1',rate:sampleRate,nowFrame:()=>this.timedFrame,trackImmediateNotes:false,patternCommandCost:ps1TimedCommandCost,
+      apply:(command,port,frame,metadata)=>command.method==='applyPs1TimedOperation'
+        ?this.timed.apply(command.operation,port,frame,metadata)
+        :this.invokeCode(this.codeEpoch,command.method,command.args),
+      validate:command=>{if(command.method!=='applyPs1TimedOperation'&&!CODE_METHODS.has(command.method))throw TypeError('Unsupported SPU timed command');}});
     this.port.onmessage = ({data}) => {
       if (data?.method === 'dispose') {this.dispose(); return;}
       void this.ready.then(() => this.receive(data)).catch(() => {});
@@ -81,6 +91,9 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
         return this.synth[command.method](...(command.args??[]));
       }});
       this.resampler = new Ps1Resampler(this.synth, sampleRate);
+      this.timed=createPs1TimedProcessor({performance:this.performance,getState:()=>capturePs1OperationState(this.synth),
+        getConfig:()=>({instanceId:`${this.timedIdentity}:${this.codeEpoch}`}),nowFrame:this.performance.nowFrame,sampleRate,
+        dispatch:(command,port,_frame,metadata)=>this.performance.applyImmediate(command,port,metadata)});
       this.syncModulators();
       this.port.postMessage({ready:true, sampleRate, nativeSampleRate:44100, state:this.readState()});
     }).catch(error => this.fail(error));
@@ -92,7 +105,7 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
       if (this.dead || !this.synth) throw new Error('SPU synth is not ready');
       if (!Array.isArray(args)) throw new TypeError('SPU command arguments must be an array');
       let value;
-      const codeRequest=['beginCode','code','observeCode'].includes(method);
+      const codeRequest=['beginCode','code','codeTimed','observeCode'].includes(method);
       const configuration=method==='setClickGuard';
       const soundSelection=method==='applyInstrument';
       const parameterEdit=method==='editInstrument';
@@ -108,6 +121,10 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
         value=this.beginCode();
       }
       else if(method==='code')value=this.invokeCode(...args);
+      else if(method==='codeTimed') {
+        if(args.length!==2||!this.codeCheckpoint||args[0]!==this.codeEpoch)throw codeCancelled();
+        this.timed.receive({id,method:'ps1Timed',args:[args[1]]},this.port);return;
+      }
       else if(method==='observeCode') {
         if(args.length)throw new TypeError('SPU Code observation takes no arguments');
         value=this.observeCode();
@@ -508,9 +525,9 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
     return {preset,sample:tuning,pmon:{...settings.pmon},noise:{...settings.noise},morph:readMorph(settings.morph),reverb:{...source.reverb},waveform:editor?.sample===sample.id?editor.pcm.slice():null};
   }
 
-  noiseFor(ch){return this.codeCheckpoint&&this.codeNoiseEdits.has(ch)?this.codeNoiseEdits.get(ch):this.noise;}
-  pmonFor(ch){return this.codeCheckpoint&&this.codePmonEdits.has(ch)?this.codePmonEdits.get(ch):{settings:{...this.pmon,enabled:this.pmon.enabled&&ch%2===1},sampleId:this.pmonSample?.id??null,waveform:this.pmonWaveform,private:false};}
-  clearCodeEdits(){this.codePmonEdits.clear();this.codeNoiseEdits.clear();this.codeMorphEdits.clear();}
+  noiseFor(ch){if(this.codeCheckpoint&&this.codeHardwareNoise.has(ch))return {enabled:this.codeHardwareNoise.get(ch),clock:this.codeHardwareNoiseClock??this.noise.clock};return this.codeCheckpoint&&this.codeNoiseEdits.has(ch)?this.codeNoiseEdits.get(ch):this.noise;}
+  pmonFor(ch){if(this.codeCheckpoint&&this.codeHardwarePmon.has(ch))return {settings:{...this.pmon,enabled:false},sampleId:null,waveform:null,private:false};return this.codeCheckpoint&&this.codePmonEdits.has(ch)?this.codePmonEdits.get(ch):{settings:{...this.pmon,enabled:this.pmon.enabled&&ch%2===1},sampleId:this.pmonSample?.id??null,waveform:this.pmonWaveform,private:false};}
+  clearCodeEdits(){this.codeHardwareNoise.clear();this.codeHardwarePmon.clear();this.codeHardwareNoiseClock=null;this.codePmonEdits.clear();this.codeNoiseEdits.clear();this.codeMorphEdits.clear();}
   hasKeyboardOwner(ch){return this.keyboardOwners.has(ch)||this.keyboardModulators.has(ch);}
   retireKeyboardChannel(ch){const id=this.keyboardOwners.get(ch);if(id){this.keyboardOwners.delete(ch);this.inspector.auditions.delete(ch);this.voices.release(id);if(this.keyboardModulators.get(ch-1)?.id===id)this.keyboardModulators.delete(ch-1);}this.keyboardModulators.delete(ch);this.lastMidi[ch]=null;this.lastBend[ch]=null;}
   retireChannel(ch){this.retireKeyboardChannel(ch);this.codeGates.delete(ch);this.physicalKey(ch,false,this.clickGuard);this.synth.gates[ch]=false;this.lastMidi[ch]=null;this.lastBend[ch]=null;}
@@ -561,13 +578,13 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
     if(method==='setInstrumentNoise') {
       for(const ch of targets)if(synth.channels[ch].sample===null)synth.channels[ch]=live.channels[ch];
       const enabledChanged=(args[1]??Object.keys(args[0])).includes('enabled');
-      if((args[1]??Object.keys(args[0])).includes('clock'))this.noise={...this.noise,clock:live.noise.clock};
-      if(enabledChanged)for(const ch of targets){if(this.noiseFor(ch).enabled!==live.noise.enabled)this.retireChannel(ch);this.codeNoiseEdits.set(ch,{...live.noise});if(live.noise.enabled){const old=this.pmonFor(ch);this.codePmonEdits.set(ch,{...old,settings:{...old.settings,enabled:false}});}}
+      if((args[1]??Object.keys(args[0])).includes('clock')){this.noise={...this.noise,clock:live.noise.clock};this.codeHardwareNoiseClock=null;}
+      if(enabledChanged)for(const ch of targets){this.codeHardwareNoise.delete(ch);if(live.noise.enabled)this.codeHardwarePmon.delete(ch);if(this.noiseFor(ch).enabled!==live.noise.enabled)this.retireChannel(ch);this.codeNoiseEdits.set(ch,{...live.noise});if(live.noise.enabled){const old=this.pmonFor(ch);this.codePmonEdits.set(ch,{...old,settings:{...old.settings,enabled:false}});}}
       if(enabledChanged&&!live.noise.enabled)for(const ch of targets){const preset=synth.channels[ch],sample=synth.samples[preset.sample];if(sample){core.write(ch*16+6,sample.startAddress>>3);core.write(ch*16+14,sample.repeatAddress>>3);core.write(ch*16+4,preset.pitch);}}
       this.syncModulators({noiseChannels:enabledChanged?targets:[],pmonChannels:[]});
     } else if(method==='setInstrumentPmon') {
       const carriers=target===null?targets.filter(ch=>ch%2===1):targets;
-      for(const ch of carriers){const old=this.pmonFor(ch),forked=live.pmon.enabled&&old.settings.enabled&&old.sampleId!==live.pmonSampleId;
+      for(const ch of carriers){this.codeHardwarePmon.delete(ch);if(live.pmon.enabled)this.codeHardwareNoise.delete(ch);const old=this.pmonFor(ch),forked=live.pmon.enabled&&old.settings.enabled&&old.sampleId!==live.pmonSampleId;
         if(old.settings.enabled!==live.pmon.enabled||forked){this.retireChannel(ch);this.retireChannel(ch-1);}
         this.codePmonEdits.set(ch,{settings:live.pmon,sampleId:live.pmonSampleId,waveform:live.pmonWaveform,private:target!==null&&(old.private||old.sampleId!==live.pmonSampleId)});
         if(live.pmon.enabled)this.codeNoiseEdits.set(ch,{...this.noiseFor(ch),enabled:false});}
@@ -637,10 +654,11 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
       pmonWaveform:this.pmonWaveform?.slice()??null,hostAudio:this.hostAudio,hostSlotId:this.hostSlot?.id??null,
       samplePcmRevision:samplePcm.revision,samplePcmSlotId:samplePcm.slotId};
     this.codeEpoch++;this.codeGates.clear();
-    return {session:this.codeEpoch,sampleRate,nativeSampleRate:44100,channelCount:24};
+    return {session:this.codeEpoch,instanceId:`${this.timedIdentity}:${this.codeEpoch}`,sampleRate,nativeSampleRate:44100,channelCount:24};
   }
 
   endCode() {
+    this.timed?.clear();this.performance.clear();
     const saved=this.codeCheckpoint;this.codeCheckpoint=null;this.codeEpoch++;this.codeGates.clear();
     this.codeNoiseSample=null;this.clearCodeEdits();
     if(!saved)return false;
@@ -661,6 +679,15 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
     if(!CODE_METHODS.has(method)||!Array.isArray(args))throw new TypeError('Unsupported SPU Code operation');
     if(method==='getState')return this.observeCode();
     if(method==='snapshot')return {...this.observeCode(),ram:this.synth.core.readRam(),registers:Uint16Array.from({length:512},(_,at)=>this.synth.core.read(at*2))};
+    if(['setNoiseEnabled','setNoiseClock','setPmonEnabled'].includes(method)) {
+      // Validate/apply the same hardware operation as compile. These calls do
+      // not provision a helper waveform, retune a source or change its Gate.
+      const value=this.synth[method](...args);
+      if(method==='setNoiseEnabled'){this.codeHardwareNoise.set(args[0],args[1]);this.syncHostMask();}
+      else if(method==='setPmonEnabled')this.codeHardwarePmon.set(args[0],args[1]);
+      else this.codeHardwareNoiseClock=args[0];
+      return value;
+    }
     if(method==='_setAuditionNoise') {
       if(args.length!==2)throw new TypeError('Temporary Noise needs settings and a loaded loop sample ID');
       const next=readNoise(args[0]),sampleId=args[1];let sample=null;
@@ -679,7 +706,7 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
     }
     const ch=args[0];let result;
     if(method==='noteOff'&&this.hasKeyboardOwner(ch))return false;
-    if(this.noiseFor(ch).enabled&&['setNote','setFrequency','noteOn'].includes(method)) {
+    if(this.noiseFor(ch).enabled&&!this.codeHardwareNoise.has(ch)&&['setNote','setFrequency','noteOn'].includes(method)) {
       if(!Number.isInteger(ch)||ch<0||ch>23)throw new RangeError('PS1 SPU channel must be 0..23');
       if(method==='setFrequency') {
         if(!Number.isFinite(args[1])||args[1]<=0)throw new RangeError('frequency must be positive finite Hz');
@@ -694,6 +721,7 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
       for(let voice=0;voice<24;voice++)this.voiceKey(voice,false,true);
     }else result=this.synth[method](...args);
     if(method==='reset') {
+      this.timed?.clear();this.performance.clear();
       this.codeGates.clear();this.keyboardOwners.clear();this.keyboardModulators.clear();this.inspector.resetAuditions();this.clearCodeEdits();this.lastMidi.fill(null);this.lastBend.fill(null);this.voices.reset();
       if(args[0]?.clearRam) {
         // A new Code bank can reuse numeric sample IDs. Retire all bindings
@@ -739,7 +767,7 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
       return {...voice,sample:sample?.id??null,volumeLeft:volume(rawRegisters[0]),volumeRight:volume(rawRegisters[1]),pitch:rawRegisters[2]&0x3fff,
         adsr1:rawRegisters[4],adsr2:rawRegisters[5],envelopeParameters:decodePs1Envelope(rawRegisters[4],rawRegisters[5]),
         reverb:Boolean(send[ch>=16?1:0]&(1<<(ch%16))),gate:this.codeGates.has(ch)||this.hasKeyboardOwner(ch),active:this.codeGates.has(ch)||this.hasKeyboardOwner(ch),waveform,rawRegisters,
-        noise:this.noiseFor(ch).enabled,noiseClock:this.noise.clock,pmonSettings:{...this.pmonFor(ch).settings},morphSettings:readMorph(this.codeMorphEdits.get(ch)??this.morph),
+        noise:!!(core.read(0x194+(ch>=16?2:0))&(1<<(ch%16))),pmon:ch>0&&!!(core.read(0x190+(ch>=16?2:0))&(1<<(ch%16))),noiseClock:(core.read(0x1aa)>>8)&63,pmonSettings:{...this.pmonFor(ch).settings},morphSettings:readMorph(this.codeMorphEdits.get(ch)??this.morph),
         ...this.readAdpcmPreview(sample,waveform)};
     })};
   }
@@ -817,14 +845,16 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
     const core=this.synth.core,bound=this.codeNoiseSample,noiseSamples=Array(24).fill(null);let noiseMask=0,pmonMask=0;
     if(bound&&(!this.codeCheckpoint||this.synth.samples[bound.id]!==bound||!bound.loop))throw new Error('Temporary Noise loop belongs to an expired sample bank');
     for(let ch=0;ch<24;ch++) {
-      if(this.noiseFor(ch).enabled){const sample=bound??this.synth.samples[this.synth.editorWaveforms[ch]?.sample];if(!sample?.loop)throw new Error('Noise needs valid looping voice samples');noiseSamples[ch]=sample;noiseMask|=1<<ch;}
-      else if(ch>0&&this.pmonFor(ch).settings.enabled)pmonMask|=1<<ch;
+      if(this.codeCheckpoint&&this.codeHardwareNoise.has(ch)){if(this.codeHardwareNoise.get(ch))noiseMask|=1<<ch;}
+      else if(this.noiseFor(ch).enabled){const sample=bound??this.synth.samples[this.synth.editorWaveforms[ch]?.sample];if(!sample?.loop)throw new Error('Noise needs valid looping voice samples');noiseSamples[ch]=sample;noiseMask|=1<<ch;}
+      if(this.codeCheckpoint&&this.codeHardwarePmon.has(ch)){if(this.codeHardwarePmon.get(ch))pmonMask|=1<<ch;}
+      else if(ch>0&&!noiseSamples[ch]&&this.pmonFor(ch).settings.enabled)pmonMask|=1<<ch;
     }
     this.syncHostMask();core.write(0x194,noiseMask&65535);core.write(0x196,noiseMask>>>16);
-    core.write(0x1aa,(core.read(0x1aa)&~0x3f00)|((noiseMask?this.noise.clock:0)<<8));
+    core.write(0x1aa,(core.read(0x1aa)&~0x3f00)|((this.codeHardwareNoiseClock??(noiseMask?this.noise.clock:0))<<8));
     for(let ch=0;ch<24;ch++)if(noiseSamples[ch]&&(!noiseChannels||noiseChannels.includes(ch))){const sample=noiseSamples[ch];core.write(ch*16+6,sample.startAddress>>3);core.write(ch*16+14,sample.repeatAddress>>3);core.write(ch*16+4,4096);}
     core.write(0x190,pmonMask&65535);core.write(0x192,pmonMask>>>16);
-    for(let ch=1;ch<24;ch++)if(pmonMask&(1<<ch)&&(!pmonChannels||pmonChannels.includes(ch))){
+    for(let ch=1;ch<24;ch++)if(pmonMask&(1<<ch)&&!this.codeHardwarePmon.has(ch)&&(!pmonChannels||pmonChannels.includes(ch))){
       if(this.codeCheckpoint)this.configureCodeModulator(ch);else this.configureModulator(ch-1,this.lastMidi[ch],this.lastBend[ch]??this.instrumentBend);
     }
   }
@@ -882,6 +912,7 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
   dispose() {
     if (this.dead) return;
     this.dead = true;
+    this.timed?.clear();this.performance.clear();
     this.codeCheckpoint=null;this.codeNoiseSample=null;this.codeEpoch++;this.codeGates.clear();
     this.inspector?.resetAuditions();
     this.synth?.dispose();
@@ -892,7 +923,7 @@ export class SpuSynthProcessor extends AudioWorkletProcessor {
     const left = outputs[0]?.[0], right = outputs[0]?.[1];
     if (!left || !right) return !this.dead;
     if (this.dead || !this.resampler) {left.fill(0); right.fill(0); return !this.dead;}
-    try {this.resampler.render(left, right); return true;}
+    try {this.performance.render(left,right,(l,r)=>this.resampler.render(l,r));this.timedFrame+=left.length; return true;}
     catch (error) {left.fill(0); right.fill(0); this.fail(error); return false;}
   }
 }

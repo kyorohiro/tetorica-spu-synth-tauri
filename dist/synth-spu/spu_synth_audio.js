@@ -1,3 +1,4 @@
+import {attachPs1TimedClient} from '../js/ps1_timed_client.js';
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, kyorohiro.
 import {preparePs1Waveform} from '../js/ps1_waveform.js?v=ps1-cyclic-1';
@@ -11,7 +12,7 @@ import {readSpuInstrument} from './spu_synth_instrument.js?v=spu-split-vab-1';
 export const SPU_SYNTH_CALIBRATED_GAIN = SOUNDCHIP_MIXER_PRESETS.calibrated.factoryDefaults.kinds.find(entry => entry.name === 'ps1').volume;
 export const SPU_SYNTH_OUTPUT_GAIN = SPU_SYNTH_CALIBRATED_GAIN * SPU_SYNTH_MIX_HEADROOM;
 const initialWaveform = () => preparePs1Waveform(Array.from({length:112}, (_, i) => .65 * Math.sin(2 * Math.PI * i / 112)));
-const CODE_METHODS=['loadADPCM','getPreset','setPreset','setChannel','setEnvelope','setReverb','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff','allNotesOff','reset','getState','snapshot','_setAuditionNoise'];
+const CODE_METHODS=['loadADPCM','getPreset','setPreset','setChannel','setEnvelope','setReverb','setNoiseEnabled','setNoiseClock','setPmonEnabled','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff','allNotesOff','reset','getState','snapshot','_setAuditionNoise'];
 const READ_METHODS=new Set(['inspect','getState','getEditorState','getPreset','getInstrument','getInstrumentSample','snapshot','findADPCM']);
 const codeCancelled=()=>{const error=new Error('SPU Code session stopped');error.name='AbortError';return error;};
 
@@ -121,7 +122,7 @@ export async function createSpuAudio({onError = () => {}, onState = () => {}, vo
     };
     async function command(method,args=[]) {
       if (!Array.isArray(args)) throw new TypeError('SPU command arguments must be an array');
-      if(!['beginCode','code','observeCode','setClickGuard','applyInstrument','editInstrument','setInstrumentSample','instrumentNoteOn','instrumentNoteOff','instrumentAllNotesOff','setInstrumentPitchBend'].includes(method)&&!READ_METHODS.has(method))invalidateCode();
+      if(!['beginCode','code','codeTimed','observeCode','setClickGuard','applyInstrument','editInstrument','setInstrumentSample','instrumentNoteOn','instrumentNoteOff','instrumentAllNotesOff','setInstrumentPitchBend'].includes(method)&&!READ_METHODS.has(method))invalidateCode();
       else if(!codeOwner&&['applyInstrument','setInstrumentSample','instrumentNoteOn','instrumentNoteOff','instrumentAllNotesOff','setInstrumentPitchBend'].includes(method))invalidateCode();
       const editing=method==='editInstrument',editOwner=codeOwner;let editSession,editTarget,editMethod;
       if(editing){
@@ -165,7 +166,7 @@ export async function createSpuAudio({onError = () => {}, onState = () => {}, vo
         const client={id:'ps1:synth',chip:'ps1',channelCount:24,nativeSampleRate:44100,sampleRate:context.sampleRate};
         for(const method of CODE_METHODS)client[method]=(...args)=>{
           check();
-          if(['getPreset','setPreset','setChannel','setEnvelope','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff'].includes(method)&&
+          if(['getPreset','setPreset','setChannel','setEnvelope','setNoiseEnabled','setNoiseClock','setPmonEnabled','setPitch','setFrequency','setNote','keyOn','keyOff','noteOn','noteOff'].includes(method)&&
             (!Number.isInteger(args[0])||args[0]<0||args[0]>23))throw new RangeError('PS1 SPU channel must be 0..23');
           return command('code',[metadata.session,method,args]).then(value=>{check();return value;});
         };
@@ -182,7 +183,10 @@ export async function createSpuAudio({onError = () => {}, onState = () => {}, vo
         client.dispose=()=>{
           check();const pending=command('stop'),generation=codeGeneration;
           return pending.then(value=>{releasedGeneration=generation;return value;});
-        };return client;
+        };
+        client.isCurrent=()=>{try{check();return true;}catch{return false;}};
+        client._requestControl=(_method,args)=>{check();return command('codeTimed',[metadata.session,args[0]]).then(value=>{check();return value;});};
+        return attachPs1TimedClient(client,{instanceId:metadata.instanceId},node.port);
       }).catch(error=>{if(codeOwner===owner)codeOwner=null;throw error;});
       return owner.promise;
     }
